@@ -80,7 +80,7 @@ class CompareType:
     def SELECTION(cls):
         return [
             cls.PLAIN,
-            # cls.SIMSAC,
+            cls.SIMSAC,
             # cls.DEXINED,
             cls.CANNY,
             cls.LAPLACIAN,
