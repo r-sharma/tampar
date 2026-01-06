@@ -205,27 +205,44 @@ def load_simsac_pretrained(weights_path, device='cuda'):
     """
     print(f"\nLoading SimSaC from: {weights_path}")
     
-    # This is a placeholder - you'll need to adjust based on TAMPAR's actual model loading
-    # The actual implementation depends on how TAMPAR's SimSaC is structured
-    
     try:
-        # Try to import TAMPAR's SimSaC
-        # Adjust this path based on your TAMPAR structure
-        from src.simsac.models.our_models.SimSaC import SimSaC
+        # Import TAMPAR's SimSaC
+        import sys
+        sys.path.insert(0, "/content/tampar")
+        from src.simsac.models.our_models.SimSaC import SimSaC_Model
         
-        # Initialize model
-        simsac = SimSaC(backbone='resnet50')
+        # Initialize model with TAMPAR's actual parameters
+        simsac = SimSaC_Model(
+            evaluation=True,  # Set to evaluation mode
+            pyramid_type='ResNet',  # ResNet backbone
+            md=4,  # Maximum displacement for correlation
+            dense_connection=True,
+            consensus_network=False,
+            cyclic_consistency=False,  # Not needed for fine-tuning
+            decoder_inputs='corr_flow_feat',
+            num_class=2,
+            use_pac=True,
+            batch_norm=True,
+            iterative_refinement=False,
+            refinement_at_all_levels=False,
+            refinement_at_adaptive_reso=True,
+            upfeat_channels=2,
+            vpr_candidates=False,
+            div=1.0
+        )
         
         # Load weights
         checkpoint = torch.load(weights_path, map_location=device)
         
         # Handle different checkpoint formats
         if 'model_state_dict' in checkpoint:
-            simsac.load_state_dict(checkpoint['model_state_dict'])
+            simsac.load_state_dict(checkpoint['model_state_dict'], strict=False)
         elif 'state_dict' in checkpoint:
-            simsac.load_state_dict(checkpoint['state_dict'])
+            simsac.load_state_dict(checkpoint['state_dict'], strict=False)
+        elif 'net' in checkpoint:
+            simsac.load_state_dict(checkpoint['net'], strict=False)
         else:
-            simsac.load_state_dict(checkpoint)
+            simsac.load_state_dict(checkpoint, strict=False)
         
         simsac = simsac.to(device)
         simsac.eval()
@@ -237,7 +254,10 @@ def load_simsac_pretrained(weights_path, device='cuda'):
         print(f"✗ Error loading SimSaC: {e}")
         print("\nPlease adjust the import path and loading logic")
         print("based on your TAMPAR repository structure.")
+        import traceback
+        traceback.print_exc()
         raise
+
 
 
 def create_simsac_contrastive(weights_path, projection_dim=128, 
