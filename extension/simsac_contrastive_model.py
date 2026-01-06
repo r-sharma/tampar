@@ -129,19 +129,23 @@ class SimSaCContrastive(nn.Module):
         Returns:
             features: Backbone features [batch_size, feature_dim]
         """
-        # Use SimSaC's backbone to extract features
-        if hasattr(self.simsac, 'extract_features'):
-            features = self.simsac.extract_features(img)
-        elif hasattr(self.simsac, 'backbone'):
-            features = self.simsac.backbone(img)
+        # SimSaC uses a pyramid for feature extraction
+        if hasattr(self.simsac, 'pyramid'):
+            # Extract features from the pyramid
+            features = self.simsac.pyramid(img)
+            
+            # Get the deepest feature level (usually level_5 or level_6)
+            if isinstance(features, (list, tuple)):
+                features = features[-1]  # Take deepest level
+            
             # Global average pooling if spatial dimensions exist
             if len(features.shape) == 4:  # [B, C, H, W]
                 features = torch.nn.functional.adaptive_avg_pool2d(features, (1, 1))
                 features = features.view(features.size(0), -1)  # [B, C]
+            
+            return features
         else:
-            raise NotImplementedError("SimSaC model structure not recognized")
-        
-        return features
+            raise NotImplementedError("SimSaC pyramid not found")
     
     def forward(self, img1, img2, return_features=False):
         """
@@ -208,14 +212,14 @@ def load_simsac_pretrained(weights_path, device='cuda'):
         # Initialize model with TAMPAR's actual parameters
         simsac = SimSaC_Model(
             evaluation=True,  # Set to evaluation mode
-            pyramid_type='ResNet',  # ResNet backbone
+            pyramid_type='VGG',  # VGG pyramid (3x3 kernels)
             md=4,  # Maximum displacement for correlation
             dense_connection=True,
             consensus_network=False,
             cyclic_consistency=False,  # Not needed for fine-tuning
             decoder_inputs='corr_flow_feat',
             num_class=2,
-            use_pac=True,
+            use_pac=False,  # No PAC layers in this checkpoint
             batch_norm=True,
             iterative_refinement=False,
             refinement_at_all_levels=False,
