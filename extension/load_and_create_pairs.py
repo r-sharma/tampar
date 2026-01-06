@@ -757,8 +757,8 @@ class ContrastivePairCreator:
         
         return pairs
     
-    def visualize_pairs(self, num_examples=5, output_dir=None):
-        """Visualize example pairs."""
+    def visualize_pairs(self, num_examples=20, output_dir=None):
+        """Visualize example pairs with augmentation details."""
         if output_dir is None:
             output_dir = self.loader.data_root
         
@@ -768,19 +768,52 @@ class ContrastivePairCreator:
         
         # Visualize positive pairs
         if self.positive_pairs:
-            fig, axes = plt.subplots(num_examples, 2, figsize=(8, 4*num_examples))
+            fig, axes = plt.subplots(num_examples, 2, figsize=(10, 3*num_examples))
             if num_examples == 1:
                 axes = axes.reshape(1, -1)
             
             examples = random.sample(self.positive_pairs, min(num_examples, len(self.positive_pairs)))
             
             for idx, pair in enumerate(examples):
+                # Image 1
                 axes[idx, 0].imshow(pair['image1'])
-                axes[idx, 0].set_title(f"Positive Pair {idx+1} - Image 1\n{pair['type']}")
+                
+                # Build title with details
+                title1 = f"Positive Pair {idx+1} - Image 1\n"
+                title1 += f"Type: {pair['type']}\n"
+                
+                if pair['type'] == 'original_vs_augmented':
+                    title1 += f"Original\n"
+                    if 'metadata' in pair and 'orig_file' in pair['metadata']:
+                        title1 += f"{pair['metadata']['orig_file'][:30]}..."
+                elif 'metadata' in pair and 'file1' in pair['metadata']:
+                    title1 += f"{pair['metadata']['file1'][:30]}..."
+                
+                axes[idx, 0].set_title(title1, fontsize=8)
                 axes[idx, 0].axis('off')
                 
+                # Image 2
                 axes[idx, 1].imshow(pair['image2'])
-                axes[idx, 1].set_title(f"Image 2\nParcel: {pair['parcel_id']}")
+                
+                title2 = f"Image 2\n"
+                title2 += f"Parcel: {pair['parcel_id']}\n"
+                
+                if pair['type'] == 'original_vs_augmented':
+                    title2 += f"AUGMENTED\n"
+                    if 'metadata' in pair and 'variant' in pair['metadata']:
+                        title2 += f"Variant #{pair['metadata']['variant']}\n"
+                    # Show augmentation applied
+                    title2 += f"(rotation, brightness,\ncontrast, noise)"
+                elif pair['type'] == 'same_parcel_different_capture':
+                    title2 += "Different capture"
+                    if 'metadata' in pair and 'file2' in pair['metadata']:
+                        title2 += f"\n{pair['metadata']['file2'][:30]}..."
+                elif pair['type'] == 'reference_vs_predicted':
+                    title2 += "Predicted UV"
+                    if 'metadata' in pair and 'pred_file' in pair['metadata']:
+                        title2 += f"\n{pair['metadata']['pred_file'][:30]}..."
+                
+                axes[idx, 1].set_title(title2, fontsize=8)
                 axes[idx, 1].axis('off')
             
             plt.tight_layout()
@@ -791,19 +824,34 @@ class ContrastivePairCreator:
         
         # Visualize negative pairs
         if self.negative_pairs:
-            fig, axes = plt.subplots(num_examples, 2, figsize=(8, 4*num_examples))
+            fig, axes = plt.subplots(num_examples, 2, figsize=(10, 3*num_examples))
             if num_examples == 1:
                 axes = axes.reshape(1, -1)
             
             examples = random.sample(self.negative_pairs, min(num_examples, len(self.negative_pairs)))
             
             for idx, pair in enumerate(examples):
+                # Image 1
                 axes[idx, 0].imshow(pair['image1'])
-                axes[idx, 0].set_title(f"Negative Pair {idx+1} - Image 1\n{pair['metadata']['parcel1']}")
+                
+                title1 = f"Negative Pair {idx+1} - Image 1\n"
+                title1 += f"Parcel: {pair['metadata']['parcel1']}\n"
+                if 'file1' in pair['metadata']:
+                    title1 += f"{pair['metadata']['file1'][:30]}..."
+                
+                axes[idx, 0].set_title(title1, fontsize=8)
                 axes[idx, 0].axis('off')
                 
+                # Image 2
                 axes[idx, 1].imshow(pair['image2'])
-                axes[idx, 1].set_title(f"Image 2\n{pair['metadata']['parcel2']}")
+                
+                title2 = f"Image 2\n"
+                title2 += f"Parcel: {pair['metadata']['parcel2']}\n"
+                title2 += "DIFFERENT PARCEL ❌\n"
+                if 'file2' in pair['metadata']:
+                    title2 += f"{pair['metadata']['file2'][:30]}..."
+                
+                axes[idx, 1].set_title(title2, fontsize=8)
                 axes[idx, 1].axis('off')
             
             plt.tight_layout()
@@ -977,7 +1025,7 @@ def main():
         )
         
         # Visualize examples
-        creator.visualize_pairs(num_examples=3, output_dir=args.data_root)
+        creator.visualize_pairs(num_examples=20, output_dir=args.data_root)
         
         # Display visualizations in Colab
         try:
