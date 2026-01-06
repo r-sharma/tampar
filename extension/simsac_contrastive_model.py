@@ -17,12 +17,12 @@ class ProjectionHead(nn.Module):
     Maps backbone features to lower-dimensional space for contrastive loss.
     """
     
-    def __init__(self, input_dim=2048, hidden_dim=512, output_dim=128):
+    def __init__(self, input_dim=512, hidden_dim=256, output_dim=128):
         """
         Initialize projection head.
         
         Args:
-            input_dim: Dimension of backbone features (e.g., 2048 for ResNet50)
+            input_dim: Dimension of backbone features (e.g., 512 for VGG pyramid)
             hidden_dim: Hidden layer dimension
             output_dim: Projection space dimension
         """
@@ -86,14 +86,8 @@ class SimSaCContrastive(nn.Module):
     
     def _get_feature_dim(self):
         """Infer feature dimension from backbone."""
-        # For ResNet50 backbone (TAMPAR default)
-        # Check if simsac has a feature_dim attribute or backbone
-        if hasattr(self.simsac, 'backbone'):
-            # Typically ResNet50 outputs 2048 features
-            return 2048
-        else:
-            # Default assumption
-            return 2048
+        # VGG pyramid typically outputs 512-dim features from the deepest level
+        return 512
     
     def _freeze_backbone(self):
         """Freeze backbone parameters."""
