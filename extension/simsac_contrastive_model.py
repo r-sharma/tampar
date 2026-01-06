@@ -211,10 +211,10 @@ def load_simsac_pretrained(weights_path, device='cuda'):
     try:
         # Try to import TAMPAR's SimSaC
         # Adjust this path based on your TAMPAR structure
-        from src.simsac.models.our_models.SimSaC import SimSaC
+        from src.simsac.models.our_models.SimSaC import SimSaC_Model
         
         # Initialize model
-        simsac = SimSaC(backbone='resnet50')
+        simsac = SimSaC_Model(backbone='resnet50')
         
         # Load weights
         checkpoint = torch.load(weights_path, map_location=device)
