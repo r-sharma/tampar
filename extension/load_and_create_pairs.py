@@ -103,7 +103,7 @@ class TAMPARDatasetLoader:
                 print(f"\n✗ No {split}/ directory found")
         
         # Check for metadata
-        for metadata_file in ['metadata_test.json', 'metadata_validation.json']:
+        for metadata_file in ['tampar_sample_validation.json', 'metadata_validation.json']:
             metadata_path = self.data_root / metadata_file
             if metadata_path.exists():
                 with open(metadata_path, 'r') as f:
