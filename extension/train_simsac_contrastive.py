@@ -3,12 +3,17 @@ Task 5: SimSaC Contrastive Training Script
 
 Main training loop for fine-tuning SimSaC with contrastive learning.
 
+Supports both full UV map pairs and surface-level pairs.
+
 Usage:
-    # Phase 1: Frozen backbone
-    python train_simsac_contrastive.py --phase 1 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs
-    
+    # Phase 1: Frozen backbone (auto-detects surface-level pairs)
+    python train_simsac_contrastive.py --phase 1 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface
+
     # Phase 2: Full fine-tuning
-    python train_simsac_contrastive.py --phase 2 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs --checkpoint phase1_final.pth
+    python train_simsac_contrastive.py --phase 2 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface --checkpoint phase1_final.pth
+
+    # Explicitly specify pair files
+    python train_simsac_contrastive.py --phase 1 --data_dir /path/to/dir --train_pairs train_pairs_surface_level.pkl --val_pairs val_pairs_surface_level.pkl
 """
 
 import os
@@ -329,7 +334,11 @@ def main():
     
     # Data arguments
     parser.add_argument('--data_dir', type=str, required=True,
-                       help='Directory containing train_pairs.pkl and val_pairs.pkl')
+                       help='Directory containing pair files (supports both surface-level and full UV map pairs)')
+    parser.add_argument('--train_pairs', type=str, default=None,
+                       help='Path to train pairs file (auto-detected if not specified)')
+    parser.add_argument('--val_pairs', type=str, default=None,
+                       help='Path to val pairs file (auto-detected if not specified)')
     parser.add_argument('--weights_path', type=str,
                        default='/content/tampar/src/simsac/weight/synth_then_joint_synth_changesim.pth',
                        help='Path to pre-trained SimSaC weights')
@@ -396,11 +405,46 @@ def main():
     print(f"{'='*70}")
     print(f"Phase: {args.phase}")
     print(f"Device: {device}")
-    
-    # Create data loaders
-    train_path = Path(args.data_dir) / 'train_pairs.pkl'
-    val_path = Path(args.data_dir) / 'val_pairs.pkl'
-    
+
+    # Auto-detect pair files if not specified
+    data_dir = Path(args.data_dir)
+
+    if args.train_pairs is None:
+        # Try surface-level pairs first, then fall back to regular pairs
+        candidates = [
+            data_dir / 'train_pairs_surface_level.pkl',
+            data_dir / 'train_pairs.pkl'
+        ]
+        train_path = None
+        for candidate in candidates:
+            if candidate.exists():
+                train_path = candidate
+                break
+        if train_path is None:
+            raise FileNotFoundError(f"Could not find train pairs file in {data_dir}. Tried: {[str(c) for c in candidates]}")
+    else:
+        train_path = Path(args.train_pairs)
+
+    if args.val_pairs is None:
+        # Try surface-level pairs first, then fall back to regular pairs
+        candidates = [
+            data_dir / 'val_pairs_surface_level.pkl',
+            data_dir / 'val_pairs.pkl'
+        ]
+        val_path = None
+        for candidate in candidates:
+            if candidate.exists():
+                val_path = candidate
+                break
+        if val_path is None:
+            raise FileNotFoundError(f"Could not find val pairs file in {data_dir}. Tried: {[str(c) for c in candidates]}")
+    else:
+        val_path = Path(args.val_pairs)
+
+    print(f"\nUsing pair files:")
+    print(f"  Train: {train_path}")
+    print(f"  Val: {val_path}")
+
     train_loader, val_loader, train_dataset, val_dataset = create_dataloaders(
         str(train_path),
         str(val_path),

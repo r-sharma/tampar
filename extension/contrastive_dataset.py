@@ -63,36 +63,40 @@ class ContrastivePairsDataset(Dataset):
     def __getitem__(self, idx):
         """
         Get a pair.
-        
+
         Returns:
             img1: First image tensor [3, H, W]
             img2: Second image tensor [3, H, W]
             label: 1 for positive, 0 for negative
         """
         pair = self.pairs[idx]
-        
-        # Get images (they're PIL Images from the pair creator)
-        img1 = pair['image1']
-        img2 = pair['image2']
-        
+
+        # Get images - support both 'image1'/'image2' and 'surface1'/'surface2' keys
+        # for backward compatibility with both full UV map pairs and surface-level pairs
+        img1 = pair.get('image1', pair.get('surface1'))
+        img2 = pair.get('image2', pair.get('surface2'))
+
+        if img1 is None or img2 is None:
+            raise KeyError(f"Pair must contain either 'image1'/'image2' or 'surface1'/'surface2' keys. Found keys: {list(pair.keys())}")
+
         # Convert to PIL if they're numpy arrays
         if isinstance(img1, np.ndarray):
             img1 = Image.fromarray(img1)
         if isinstance(img2, np.ndarray):
             img2 = Image.fromarray(img2)
-        
+
         # Ensure RGB
         if img1.mode != 'RGB':
             img1 = img1.convert('RGB')
         if img2.mode != 'RGB':
             img2 = img2.convert('RGB')
-        
+
         # Apply transforms
         img1 = self.transform(img1)
         img2 = self.transform(img2)
-        
+
         label = torch.tensor(pair['label'], dtype=torch.float32)
-        
+
         return img1, img2, label
     
     def get_statistics(self):
