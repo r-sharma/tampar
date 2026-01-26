@@ -178,7 +178,7 @@ class Trainer:
                 # Update progress bar
                 pbar.set_postfix({
                     'loss': f"{loss.item():.4f}",
-                    'avg_loss': f"{total_loss/(len(pbar.last_print_n)+1):.4f}"
+                    'avg_loss': f"{total_loss/(pbar.n+1):.4f}"
                 })
         
         # Average losses
@@ -257,24 +257,25 @@ class Trainer:
         print(f"Final checkpoint: {output_dir}/phase{self.config['phase']}_final.pth")
     
     def save_checkpoint(self, epoch, output_dir, is_best=False, filename=None):
-        """Save model checkpoint."""
+        """Save model checkpoint in TAMPAR-compatible format."""
         if filename is None:
             filename = f"checkpoint_epoch_{epoch+1}.pth"
-        
+
+        # Use 'state_dict' key to match TAMPAR's expected format
         checkpoint = {
             'epoch': epoch + 1,
-            'model_state_dict': self.model.state_dict(),
+            'state_dict': self.model.state_dict(),  # Changed from 'model_state_dict' to 'state_dict'
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_val_loss': self.best_val_loss,
             'history': self.history,
             'config': self.config
         }
-        
+
         checkpoint_path = output_dir / filename
         torch.save(checkpoint, checkpoint_path)
         print(f"  Checkpoint saved: {checkpoint_path}")
-        
+
         if is_best:
             best_path = output_dir / 'best_model.pth'
             torch.save(checkpoint, best_path)
@@ -283,16 +284,17 @@ class Trainer:
     def load_checkpoint(self, checkpoint_path):
         """Load checkpoint to resume training."""
         print(f"\nLoading checkpoint from: {checkpoint_path}")
-        
+
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+
+        # Use 'state_dict' key to match TAMPAR's format
+        self.model.load_state_dict(checkpoint['state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_val_loss = checkpoint['best_val_loss']
         self.history = checkpoint['history']
         self.start_epoch = checkpoint['epoch']
-        
+
         print(f"✓ Checkpoint loaded")
         print(f"  Resuming from epoch: {self.start_epoch}")
         print(f"  Best val loss so far: {self.best_val_loss:.4f}")
