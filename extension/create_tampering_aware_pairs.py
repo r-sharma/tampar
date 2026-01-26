@@ -54,38 +54,78 @@ sys.path.append(ROOT.as_posix())
 class TamperingPairGenerator:
     """Generate tampering-aware pairs for contrastive learning."""
 
-    def __init__(self, data_root, surface_types=None, seed=42):
+    def __init__(self, data_root, surface_types=None, tampering_mapping_csv=None, seed=42):
         """
         Initialize pair generator.
 
         Args:
             data_root: Root directory containing parcels
             surface_types: List of surface types to use (None = auto-detect)
+            tampering_mapping_csv: Path to tampering_mapping.csv (None = auto-find from TAMPAR)
             seed: Random seed for reproducibility
         """
         self.data_root = Path(data_root)
         self.seed = seed
         random.seed(seed)
 
-        # Surface types
+        # Surface types (TAMPAR uses: center, top, bottom, left, right)
         if surface_types is None:
-            surface_types = ['base', 'carpet', 'gravel', 'table']
+            surface_types = ['center', 'top', 'bottom', 'left', 'right']
         self.surface_types = surface_types
 
         # Tampering type mapping
         self.tampering_map = {
-            'clean': 0,
-            'T': 1,  # Tape
-            'W': 2,  # Writing
-            'F': 3,  # Fold
+            '': 0,      # Clean (empty string)
+            'T': 1,     # Tape (t, te, th, etc.)
+            'W': 2,     # Writing (w, we, wh, etc.)
+            'L': 3,     # Label? (l, le, lh, etc.)
             'other': 4  # Other tampering
         }
+
+        # Load TAMPAR's tampering_mapping.csv
+        if tampering_mapping_csv is None:
+            # Try to find it in TAMPAR source
+            tampar_root = Path(__file__).parent.parent
+            tampering_mapping_csv = tampar_root / "src" / "tampering" / "tampering_mapping.csv"
+
+        self.tampering_mapping_csv = Path(tampering_mapping_csv)
+        if not self.tampering_mapping_csv.exists():
+            raise FileNotFoundError(f"tampering_mapping.csv not found at {self.tampering_mapping_csv}")
+
+        # Load tampering mapping
+        self.tampering_mapping = self._load_tampering_mapping()
 
         # Load data structure
         self.parcels = self._load_parcels()
 
         print(f"\nLoaded {len(self.parcels)} parcels from {data_root}")
         print(f"Surface types: {self.surface_types}")
+        print(f"Tampering mapping: {len(self.tampering_mapping)} parcels")
+
+    def _load_tampering_mapping(self):
+        """
+        Load tampering codes from TAMPAR's tampering_mapping.csv.
+
+        Returns:
+            tampering_mapping: Dict mapping {parcel_id: {surface_name: tampering_code}}
+        """
+        import pandas as pd
+
+        df = pd.read_csv(self.tampering_mapping_csv)
+        df.fillna('', inplace=True)  # Empty string for clean surfaces
+
+        tampering_mapping = {}
+        for _, row in df.iterrows():
+            parcel_id = f"id_{str(row['id']).zfill(2)}"
+            tampering_mapping[parcel_id] = {
+                'center': row['center'],
+                'top': row['top'],
+                'bottom': row['bottom'],
+                'left': row['left'],
+                'right': row['right']
+            }
+
+        return tampering_mapping
 
     def _load_parcels(self):
         """
@@ -128,13 +168,11 @@ class TamperingPairGenerator:
             # Store path
             parcels[parcel_id][surface_type][map_type] = uvmap_path
 
-            # Load tampering codes if available
-            tampering_file = uvmap_path.parent / 'tampering_codes.txt'
-            if tampering_file.exists() and 'tampering_code' not in parcels[parcel_id][surface_type]:
-                with open(tampering_file, 'r') as f:
-                    code = f.read().strip()
-                    parcels[parcel_id][surface_type]['tampering_code'] = code
-                    parcels[parcel_id][surface_type]['tampering_label'] = self._parse_tampering_code(code)
+            # Get tampering code from tampering_mapping.csv
+            if parcel_id in self.tampering_mapping and 'tampering_code' not in parcels[parcel_id][surface_type]:
+                code = self.tampering_mapping[parcel_id].get(surface_type, '')
+                parcels[parcel_id][surface_type]['tampering_code'] = code
+                parcels[parcel_id][surface_type]['tampering_label'] = self._parse_tampering_code(code)
 
         return dict(parcels)
 
@@ -148,26 +186,34 @@ class TamperingPairGenerator:
 
     def _parse_tampering_code(self, code):
         """
-        Parse tampering code to label.
+        Parse TAMPAR tampering code to label.
+
+        TAMPAR codes are like: "te", "wh", "lh", "we", "th", etc.
+        - First letter: tampering type (t=tape, w=writing, l=label, etc.)
+        - Second letter: severity (e=easy, h=hard, etc.)
 
         Args:
-            code: Tampering code (e.g., "T1W2", "CLEAN", "F3")
+            code: Tampering code (e.g., "te", "wh", "lh", "")
 
         Returns:
-            label: Integer label (0=clean, 1=tape, 2=writing, 3=fold, 4=other)
+            label: Integer label (0=clean, 1=tape, 2=writing, 3=label, 4=other)
         """
-        if not code or code.upper() == 'CLEAN':
-            return 0
+        if not code or code == '':
+            return 0  # Clean
 
-        # Check for specific tampering types
-        if 'T' in code.upper():
+        # Get first letter of code (tampering type)
+        code_lower = code.lower()
+        first_char = code_lower[0] if code_lower else ''
+
+        # Map tampering types
+        if first_char == 't':
             return 1  # Tape
-        elif 'W' in code.upper():
+        elif first_char == 'w':
             return 2  # Writing
-        elif 'F' in code.upper():
-            return 3  # Fold
+        elif first_char == 'l':
+            return 3  # Label
         else:
-            return 4  # Other
+            return 4  # Other tampering
 
     def generate_triplets(self, uvmap_type='gt', min_pairs_per_parcel=5):
         """
