@@ -261,10 +261,22 @@ class Trainer:
         if filename is None:
             filename = f"checkpoint_epoch_{epoch+1}.pth"
 
-        # Use 'state_dict' key to match TAMPAR's expected format
+        # Extract only the base SimSaC model weights (remove "simsac." prefix and projection head)
+        # This ensures compatibility with TAMPAR's inference.py
+        full_state_dict = self.model.state_dict()
+        simsac_state_dict = {}
+
+        for key, value in full_state_dict.items():
+            if key.startswith('simsac.'):
+                # Remove "simsac." prefix to match TAMPAR's format
+                new_key = key[7:]  # Remove "simsac." (7 characters)
+                simsac_state_dict[new_key] = value
+            # Skip projection_head.* keys - they're not needed for TAMPAR inference
+
+        # Save checkpoint with TAMPAR-compatible format
         checkpoint = {
             'epoch': epoch + 1,
-            'state_dict': self.model.state_dict(),  # Changed from 'model_state_dict' to 'state_dict'
+            'state_dict': simsac_state_dict,  # Only base SimSaC weights, no prefix
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_val_loss': self.best_val_loss,
@@ -287,8 +299,18 @@ class Trainer:
 
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        # Use 'state_dict' key to match TAMPAR's format
-        self.model.load_state_dict(checkpoint['state_dict'])
+        # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
+        # We need to add the prefix back to load into our wrapped model
+        simsac_state_dict = checkpoint['state_dict']
+
+        # Add "simsac." prefix to all keys
+        wrapped_state_dict = {}
+        for key, value in simsac_state_dict.items():
+            wrapped_state_dict[f'simsac.{key}'] = value
+
+        # Load into the wrapped model (this only loads the simsac part, projection_head keeps its random init)
+        self.model.load_state_dict(wrapped_state_dict, strict=False)
+
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_val_loss = checkpoint['best_val_loss']
