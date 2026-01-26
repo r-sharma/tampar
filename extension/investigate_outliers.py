@@ -70,7 +70,19 @@ def load_model(checkpoint_path, device='cuda'):
         freeze_backbone=False
     )
 
-    model.load_state_dict(checkpoint['model_state_dict'])
+    # Load trained weights (TAMPAR-compatible format)
+    # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
+    # We need to add the prefix back to load into our wrapped model
+    simsac_state_dict = checkpoint['state_dict']
+
+    # Add "simsac." prefix to all keys
+    wrapped_state_dict = {}
+    for key, value in simsac_state_dict.items():
+        wrapped_state_dict[f'simsac.{key}'] = value
+
+    # Load into the wrapped model (strict=False allows missing projection_head keys)
+    model.load_state_dict(wrapped_state_dict, strict=False)
+
     model = model.to(device)
     model.eval()
 
