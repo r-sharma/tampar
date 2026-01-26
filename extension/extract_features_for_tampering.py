@@ -103,8 +103,17 @@ def extract_surfaces_from_uvmap(uv_map_path):
     uv_map = Image.open(uv_map_path).convert('RGB')
     uv_map_array = np.array(uv_map)
 
-    # Extract surfaces using TAMPAR's function
-    surfaces_dict = get_side_surface_patches(uv_map_array)
+    # Extract surfaces using TAMPAR's function (returns list of 9 patches in 3x3 grid)
+    surfaces_list = get_side_surface_patches(uv_map_array)
+
+    # PATCH_ORDER from TAMPAR: ["", "top", "", "left", "center", "right", "", "bottom", ""]
+    # Map list indices to surface names
+    patch_order = ["", "top", "", "left", "center", "right", "", "bottom", ""]
+
+    surfaces_dict = {}
+    for i, name in enumerate(patch_order):
+        if name:  # Skip empty strings
+            surfaces_dict[name] = surfaces_list[i]
 
     return surfaces_dict
 
