@@ -1,11 +1,12 @@
 """
-Generate Adversarial 3D Field Images and UV Maps
+Generate Adversarial UV Maps
 
-Creates adversarial perturbations on 3D field images using FGSM/PGD attacks,
-then generates UV maps from these adversarial fields to challenge tampering detection.
+Creates adversarial perturbations directly on UV maps using FGSM/PGD attacks
+to challenge tampering detection. This creates realistic-looking but adversarially
+perturbed UV maps that significantly reduce detection accuracy.
 
-The goal is to create realistic-looking but adversarially perturbed UV maps that
-significantly reduce detection accuracy.
+The attacks use gradient-based perturbations combined with hallucination losses
+to create artifacts that confuse both traditional and deep learning-based detectors.
 
 Usage:
     # FGSM attack, generate both GT and Pred UV maps
@@ -22,8 +23,8 @@ Usage:
         --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
         --attack pgd \
         --uvmap_types gt \
-        --epsilon 0.03 \
-        --pgd_steps 10
+        --epsilon 0.08 \
+        --pgd_steps 20
 
     # Both attacks, both UV map types
     python generate_adversarial_fields.py \
@@ -47,14 +48,9 @@ import torch.nn.functional as F
 from PIL import Image
 import cv2
 
-# Add TAMPAR to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.unwrapping.unwrapper import Unwrapper
-
-
-class AdversarialFieldGenerator:
-    """Generate adversarial perturbations on 3D field images."""
+class AdversarialUVMapGenerator:
+    """Generate adversarial perturbations on UV maps."""
 
     def __init__(self, epsilon=0.05, device='cuda'):
         """
@@ -167,41 +163,41 @@ class AdversarialFieldGenerator:
 
         return loss
 
-    def generate_adversarial_field(self, field_path, attack_type='fgsm',
+    def generate_adversarial_uvmap(self, uvmap_path, attack_type='fgsm',
                                    hallucination_strength=1.0, pgd_steps=10):
         """
-        Generate adversarial version of 3D field image.
+        Generate adversarial version of UV map.
 
         Args:
-            field_path: Path to original field image
+            uvmap_path: Path to original UV map
             attack_type: 'fgsm' or 'pgd'
             hallucination_strength: Weight for hallucination losses
             pgd_steps: Number of PGD steps if using PGD
 
         Returns:
-            Adversarial field image as numpy array
+            Adversarial UV map as numpy array
         """
-        # Load field image
-        field = Image.open(field_path).convert('RGB')
-        field_np = np.array(field).astype(np.float32) / 255.0
+        # Load UV map
+        uvmap = Image.open(uvmap_path).convert('RGB')
+        uvmap_np = np.array(uvmap).astype(np.float32) / 255.0
 
         # Convert to tensor
-        field_tensor = torch.from_numpy(field_np).permute(2, 0, 1).to(self.device)
-        field_tensor = field_tensor.unsqueeze(0)  # [1, C, H, W]
+        uvmap_tensor = torch.from_numpy(uvmap_np).permute(2, 0, 1).to(self.device)
+        uvmap_tensor = uvmap_tensor.unsqueeze(0)  # [1, C, H, W]
 
         if attack_type == 'fgsm':
             # FGSM: Single-step attack
-            field_tensor.requires_grad = True
+            uvmap_tensor.requires_grad = True
 
             # Combined loss: texture variation + smoothness violation
-            loss = (hallucination_strength * self.texture_loss(field_tensor[0]) +
-                   hallucination_strength * self.smoothness_loss(field_tensor[0]))
+            loss = (hallucination_strength * self.texture_loss(uvmap_tensor[0]) +
+                   hallucination_strength * self.smoothness_loss(uvmap_tensor[0]))
 
             # Compute gradient
             loss.backward()
 
             # Generate adversarial image
-            adv_field = self.fgsm_attack(field_tensor[0], field_tensor.grad[0])
+            adv_uvmap = self.fgsm_attack(uvmap_tensor[0], uvmap_tensor.grad[0])
 
         elif attack_type == 'pgd':
             # PGD: Multi-step attack
@@ -209,29 +205,29 @@ class AdversarialFieldGenerator:
                 return (hallucination_strength * self.texture_loss(img) +
                        hallucination_strength * self.smoothness_loss(img))
 
-            adv_field = self.pgd_attack(field_tensor[0], loss_fn, steps=pgd_steps)
+            adv_uvmap = self.pgd_attack(uvmap_tensor[0], loss_fn, steps=pgd_steps)
 
         else:
             raise ValueError(f"Unknown attack type: {attack_type}")
 
         # Convert back to numpy
-        adv_field_np = adv_field.detach().cpu().permute(1, 2, 0).numpy()
-        adv_field_np = (adv_field_np * 255).astype(np.uint8)
+        adv_uvmap_np = adv_uvmap.detach().cpu().permute(1, 2, 0).numpy()
+        adv_uvmap_np = (adv_uvmap_np * 255).astype(np.uint8)
 
-        return adv_field_np
+        return adv_uvmap_np
 
 
 def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                                 uvmap_types=['gt', 'pred'], epsilon=0.05,
                                 hallucination_strength=2.0, pgd_steps=10):
     """
-    Generate adversarial 3D fields and corresponding UV maps.
+    Generate adversarial UV maps directly.
 
     Args:
         data_dir: Input data directory (e.g., validation folder)
         output_dir: Output directory for adversarial data
         attack_type: 'fgsm', 'pgd', or 'both'
-        uvmap_types: List of UV map types to generate ('gt', 'pred', or both)
+        uvmap_types: List of UV map types to perturb ('gt', 'pred', or both)
         epsilon: Perturbation magnitude
         hallucination_strength: Strength of hallucination losses
         pgd_steps: Number of PGD iterations
@@ -241,7 +237,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*70}")
-    print("Adversarial 3D Field Generation")
+    print("Adversarial UV Map Generation")
     print(f"{'='*70}")
     print(f"Input directory:  {data_dir}")
     print(f"Output directory: {output_dir}")
@@ -256,7 +252,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Device:           {device}")
 
-    generator = AdversarialFieldGenerator(epsilon=epsilon, device=device)
+    generator = AdversarialUVMapGenerator(epsilon=epsilon, device=device)
 
     # Determine attack types to run
     if attack_type == 'both':
@@ -264,77 +260,70 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     else:
         attacks = [attack_type]
 
-    # Find all parcels
-    parcel_ids = []
-    for item in data_dir.iterdir():
-        if item.is_dir() and item.name.startswith('id_'):
-            parcel_id = int(item.name.split('_')[1])
-            parcel_ids.append(parcel_id)
+    # Find all UV map files recursively
+    uvmap_files = []
 
-    parcel_ids.sort()
-    print(f"\nFound {len(parcel_ids)} parcels: {parcel_ids}")
+    # Search for uvmap_gt.png and uvmap_pred.png files
+    for uvmap_type in uvmap_types:
+        pattern = f"*_uvmap_{uvmap_type}.png"
+        found_files = list(data_dir.rglob(pattern))
+        uvmap_files.extend(found_files)
 
-    # Process each parcel
-    for parcel_id in tqdm(parcel_ids, desc="Processing parcels"):
-        parcel_dir = data_dir / f"id_{parcel_id:02d}"
+    print(f"\nFound {len(uvmap_files)} UV map files across all subdirectories")
+
+    # Group by parent directory (surface type)
+    from collections import defaultdict
+    files_by_dir = defaultdict(list)
+    for f in uvmap_files:
+        files_by_dir[f.parent].append(f)
+
+    print(f"Organized into {len(files_by_dir)} subdirectories:")
+    for dir_path in sorted(files_by_dir.keys()):
+        rel_path = dir_path.relative_to(data_dir)
+        print(f"  {rel_path}: {len(files_by_dir[dir_path])} files")
+
+    # Process each subdirectory
+    total_uvmaps = 0
+    for subdir_path in tqdm(sorted(files_by_dir.keys()), desc="Processing subdirectories"):
+        subdir_name = subdir_path.relative_to(data_dir)
 
         # Process each attack type
         for attack in attacks:
-            # Create output directory for this attack
+            # Create output directory mirroring input structure
             attack_suffix = f"_adv_{attack}"
-            output_parcel_dir = output_dir / f"id_{parcel_id:02d}{attack_suffix}"
-            output_parcel_dir.mkdir(parents=True, exist_ok=True)
+            output_subdir = output_dir / f"{subdir_name}{attack_suffix}"
+            output_subdir.mkdir(parents=True, exist_ok=True)
 
-            # Copy metadata files
-            for meta_file in ['tampering_codes.txt', 'uvmap_metadata.json']:
-                if (parcel_dir / meta_file).exists():
-                    shutil.copy(parcel_dir / meta_file, output_parcel_dir / meta_file)
+            # Process each UV map file in this directory
+            for uvmap_path in files_by_dir[subdir_path]:
+                # Determine uvmap type from filename
+                if '_uvmap_gt.png' in uvmap_path.name:
+                    uvmap_type = 'gt'
+                elif '_uvmap_pred.png' in uvmap_path.name:
+                    uvmap_type = 'pred'
+                else:
+                    continue
 
-            # Generate adversarial field image
-            field_path = parcel_dir / f"id_{parcel_id:02d}_field.png"
-            if not field_path.exists():
-                print(f"  Warning: Field not found for parcel {parcel_id}, skipping")
-                continue
+                # Skip if this type is not requested
+                if uvmap_type not in uvmap_types:
+                    continue
 
-            adv_field = generator.generate_adversarial_field(
-                field_path,
-                attack_type=attack,
-                hallucination_strength=hallucination_strength,
-                pgd_steps=pgd_steps
-            )
-
-            # Save adversarial field
-            output_field_path = output_parcel_dir / f"id_{parcel_id:02d}_field.png"
-            Image.fromarray(adv_field).save(output_field_path)
-
-            # Generate UV maps from adversarial field
-            for uvmap_type in uvmap_types:
                 try:
-                    # Create unwrapper
-                    unwrapper = Unwrapper()
-
-                    # Determine which GT/Pred mesh to use
-                    if uvmap_type == 'gt':
-                        mesh_path = parcel_dir / f"id_{parcel_id:02d}_mesh_gt.ply"
-                    else:  # pred
-                        mesh_path = parcel_dir / f"id_{parcel_id:02d}_mesh_pred.ply"
-
-                    if not mesh_path.exists():
-                        print(f"  Warning: Mesh {uvmap_type} not found for parcel {parcel_id}")
-                        continue
-
-                    # Unwrap adversarial field onto mesh
-                    uvmap = unwrapper.unwrap(
-                        str(output_field_path),
-                        str(mesh_path)
+                    # Generate adversarial UV map
+                    adv_uvmap = generator.generate_adversarial_uvmap(
+                        uvmap_path,
+                        attack_type=attack,
+                        hallucination_strength=hallucination_strength,
+                        pgd_steps=pgd_steps
                     )
 
-                    # Save UV map
-                    output_uvmap_path = output_parcel_dir / f"id_{parcel_id:02d}_uvmap_{uvmap_type}.png"
-                    cv2.imwrite(str(output_uvmap_path), uvmap)
+                    # Save adversarial UV map with same filename
+                    output_uvmap_path = output_subdir / uvmap_path.name
+                    Image.fromarray(adv_uvmap).save(output_uvmap_path)
+                    total_uvmaps += 1
 
                 except Exception as e:
-                    print(f"  Error generating {uvmap_type} UV map for parcel {parcel_id}: {e}")
+                    print(f"  Error generating {uvmap_path.name}: {e}")
 
     print(f"\n{'='*70}")
     print("✓ Adversarial dataset generation complete!")
@@ -342,34 +331,20 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     print(f"\nOutput directory: {output_dir}")
 
     # Print statistics
-    total_fields = 0
-    total_uvmaps = 0
-
     for attack in attacks:
-        attack_count = 0
         uvmap_count = 0
 
-        for parcel_id in parcel_ids:
-            attack_suffix = f"_adv_{attack}"
-            parcel_dir = output_dir / f"id_{parcel_id:02d}{attack_suffix}"
-
-            if (parcel_dir / f"id_{parcel_id:02d}_field.png").exists():
-                attack_count += 1
-
-            for uvmap_type in uvmap_types:
-                if (parcel_dir / f"id_{parcel_id:02d}_uvmap_{uvmap_type}.png").exists():
-                    uvmap_count += 1
-
-        total_fields += attack_count
-        total_uvmaps += uvmap_count
+        # Count files in attack-specific subdirectories
+        attack_suffix = f"_adv_{attack}"
+        for subdir_name in files_by_dir.keys():
+            output_subdir = output_dir / f"{subdir_name.relative_to(data_dir)}{attack_suffix}"
+            if output_subdir.exists():
+                uvmap_count += len(list(output_subdir.glob("*_uvmap_*.png")))
 
         print(f"\n{attack.upper()} Attack:")
-        print(f"  Adversarial fields: {attack_count}")
-        print(f"  UV maps generated:  {uvmap_count}")
+        print(f"  Adversarial UV maps: {uvmap_count}")
 
-    print(f"\nTotal:")
-    print(f"  Adversarial fields: {total_fields}")
-    print(f"  UV maps generated:  {total_uvmaps}")
+    print(f"\nTotal adversarial UV maps generated: {total_uvmaps}")
 
 
 def main():
