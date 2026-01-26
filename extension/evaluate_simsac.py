@@ -89,8 +89,8 @@ def load_model(checkpoint_path, device='cuda'):
         freeze_backbone=False  # Load with all params
     )
     
-    # Load trained weights
-    model.load_state_dict(checkpoint['model_state_dict'])
+    # Load trained weights (TAMPAR-compatible format)
+    model.load_state_dict(checkpoint['state_dict'])
     model = model.to(device)
     model.eval()
     
