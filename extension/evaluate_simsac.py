@@ -8,10 +8,19 @@ Comprehensive evaluation including:
 - Confusion matrix
 - Comparison of positive vs negative pair similarities
 
+Supports both full UV map pairs and surface-level pairs.
+
 Usage:
+    # Auto-detect surface-level pairs
     python evaluate_simsac.py \
         --checkpoint /content/outputs/training/best_model.pth \
-        --data_dir /content/tampar/data/tampar_sample/contrastive_pairs \
+        --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface \
+        --output_dir /content/outputs/evaluation
+
+    # Explicitly specify pair file
+    python evaluate_simsac.py \
+        --checkpoint /content/outputs/training/best_model.pth \
+        --val_pairs /path/to/val_pairs_surface_level.pkl \
         --output_dir /content/outputs/evaluation
 """
 
@@ -366,11 +375,13 @@ def save_results(metrics, similarity_stats, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate fine-tuned SimSaC")
-    
+
     parser.add_argument('--checkpoint', type=str, required=True,
                        help='Path to trained model checkpoint')
-    parser.add_argument('--data_dir', type=str, required=True,
-                       help='Directory with val_pairs.pkl')
+    parser.add_argument('--data_dir', type=str, default=None,
+                       help='Directory with pair files (auto-detects surface-level or full UV map pairs)')
+    parser.add_argument('--val_pairs', type=str, default=None,
+                       help='Path to validation pairs file (auto-detected if not specified)')
     parser.add_argument('--output_dir', type=str, default='/content/outputs/evaluation',
                        help='Output directory for results')
     parser.add_argument('--batch_size', type=int, default=16,
@@ -379,28 +390,49 @@ def main():
                        help='Similarity threshold for classification')
     parser.add_argument('--device', type=str, default='cuda',
                        help='Device to use')
-    
+
     args = parser.parse_args()
-    
+
     # Setup
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     device = args.device if torch.cuda.is_available() else 'cpu'
-    
+
     print(f"\n{'='*70}")
     print("SimSaC Contrastive Learning - Evaluation (Task 5.7)")
     print(f"{'='*70}")
     print(f"Checkpoint: {args.checkpoint}")
-    print(f"Data directory: {args.data_dir}")
-    print(f"Output directory: {output_dir}")
     print(f"Device: {device}")
-    
+
     # Load model
     model, checkpoint = load_model(args.checkpoint, device)
-    
+
+    # Auto-detect validation pairs if not specified
+    if args.val_pairs is None:
+        if args.data_dir is None:
+            raise ValueError("Must specify either --data_dir or --val_pairs")
+
+        data_dir = Path(args.data_dir)
+        # Try surface-level pairs first, then fall back to regular pairs
+        candidates = [
+            data_dir / 'val_pairs_surface_level.pkl',
+            data_dir / 'val_pairs.pkl'
+        ]
+        val_path = None
+        for candidate in candidates:
+            if candidate.exists():
+                val_path = candidate
+                break
+        if val_path is None:
+            raise FileNotFoundError(f"Could not find val pairs file in {data_dir}. Tried: {[str(c) for c in candidates]}")
+    else:
+        val_path = Path(args.val_pairs)
+
+    print(f"Data: {val_path}")
+    print(f"Output directory: {output_dir}")
+
     # Load validation data
-    val_path = Path(args.data_dir) / 'val_pairs.pkl'
     val_dataset = ContrastivePairsDataset(str(val_path))
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
