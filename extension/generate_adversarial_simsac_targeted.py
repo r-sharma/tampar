@@ -88,9 +88,18 @@ class SimSaCTargetedAttackGenerator:
             # Train mode - nested structure
             flow_tuple = output.get('flow', None)
             if flow_tuple is not None and isinstance(flow_tuple, tuple) and len(flow_tuple) == 2:
-                # flow_tuple = ([flow4, flow3], [flow2, flow1])
-                # We want flow1 (finest resolution)
-                flow = flow_tuple[1][1]  # Second tuple, second element
+                # flow_tuple could be:
+                # - Full model: ([flow4, flow3], [flow2, flow1])
+                # - Monkey-patched: ([flow4], [flow4])
+                # Try to get the finest resolution flow available
+                if len(flow_tuple[1]) > 0:
+                    # Get last element from second tuple (finest resolution)
+                    flow = flow_tuple[1][-1]
+                elif len(flow_tuple[0]) > 0:
+                    # Fallback to first tuple
+                    flow = flow_tuple[0][-1]
+                else:
+                    flow = None
             else:
                 flow = output.get('flow_est', None)
         elif isinstance(output, (list, tuple)):
