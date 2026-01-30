@@ -81,16 +81,26 @@ class SimSaCTargetedAttackGenerator:
         # Model is in train mode to allow gradients
         output = self.simsac(field_512, reference_512, field_256, reference_256)
 
-        # Extract flow (SimSAC in eval mode returns tuple: (flow, change))
-        if isinstance(output, (list, tuple)):
-            flow = output[0]  # First element is flow
-        elif isinstance(output, dict):
-            flow = output.get('flow_est', output.get('flow', None))
+        # Extract flow based on mode
+        # Train mode: dict with {"flow": ([flow4, flow3], [flow2, flow1]), ...}
+        # Eval mode: tuple (flow1, change1)
+        if isinstance(output, dict):
+            # Train mode - nested structure
+            flow_tuple = output.get('flow', None)
+            if flow_tuple is not None and isinstance(flow_tuple, tuple) and len(flow_tuple) == 2:
+                # flow_tuple = ([flow4, flow3], [flow2, flow1])
+                # We want flow1 (finest resolution)
+                flow = flow_tuple[1][1]  # Second tuple, second element
+            else:
+                flow = output.get('flow_est', None)
+        elif isinstance(output, (list, tuple)):
+            # Eval mode - (flow, change)
+            flow = output[0]
         else:
             flow = output
 
         if flow is None:
-            raise ValueError(f"SimSAC did not return flow output. Got: {type(output)}")
+            raise ValueError(f"SimSAC did not return flow output. Got: {type(output)}, keys: {output.keys() if isinstance(output, dict) else 'N/A'}")
 
         # Compute flow magnitude
         flow_mag = torch.sqrt(flow[:, 0]**2 + flow[:, 1]**2)
