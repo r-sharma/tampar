@@ -284,7 +284,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
         # Continue with rest of forward pass
         # (Call original method's logic but with gradient-enabled features)
         # For simplicity, just compute at coarsest level
-        flow4, corr4 = self.coarsest_resolution_flow(c14, c24, h_256=256, w_256=256)
+        flow4, corr4 = self.coarsest_resolution_flow(c14, c24, h_256=256, w_256=256, return_corr=True)
 
         # Return in training mode format
         return {
