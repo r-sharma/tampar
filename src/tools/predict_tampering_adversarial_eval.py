@@ -227,10 +227,15 @@ def main():
     print("\nLoading adversarial test data...")
     df_adversarial = load_results(Path(args.adversarial_csv))
 
-    # Filter out base folder if requested
+    # Filter out base folder if requested (handles both /base/ and base_adv_*)
     if args.exclude_base:
         print("Excluding base folder from adversarial data...")
-        df_adversarial = df_adversarial[~df_adversarial['view'].str.contains('/base/')]
+        # Match both '/base/' in view path AND 'base_adv_*' in background column
+        base_mask = (
+            df_adversarial['view'].str.contains('/base/') |
+            df_adversarial['background'].str.contains(r'base_adv_')
+        )
+        df_adversarial = df_adversarial[~base_mask]
         print(f"  Remaining samples: {len(df_adversarial)}")
 
     df_test = create_pivot(df_adversarial)
