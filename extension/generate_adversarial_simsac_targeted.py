@@ -65,11 +65,16 @@ class SimSaCTargetedAttackGenerator:
         self.epsilon = epsilon
         self.device = device
 
-    def simsac_flow_loss(self, field_img, reference_img):
+    def simsac_change_loss(self, field_img, reference_img):
         """
-        Compute loss based on SimSAC optical flow.
+        Compute loss based on SimSAC change/correlation output.
 
-        Maximizes flow magnitude to make images appear very different.
+        The tampering detector uses the CHANGE map (correspondence confidence),
+        not the optical flow! We need to minimize the change output to make
+        tampered images look clean to the detector.
+
+        Lower change = Good correspondence = Detector thinks "clean"
+        Higher change = Poor correspondence = Detector thinks "tampered"
         """
         # Resize to required resolutions
         field_512 = F.interpolate(field_img, size=(512, 512), mode='bilinear', align_corners=False)
@@ -81,41 +86,45 @@ class SimSaCTargetedAttackGenerator:
         # Model is in train mode to allow gradients
         output = self.simsac(field_512, reference_512, field_256, reference_256)
 
-        # Extract flow based on mode
-        # Train mode: dict with {"flow": ([flow4, flow3], [flow2, flow1]), ...}
+        # Extract CHANGE/CORRELATION output (not flow!)
+        # Train mode: dict with {"flow": ..., "change": ([change4, change3], [change2, change1])}
         # Eval mode: tuple (flow1, change1)
+        change = None
+
         if isinstance(output, dict):
             # Train mode - nested structure
-            flow_tuple = output.get('flow', None)
-            if flow_tuple is not None and isinstance(flow_tuple, tuple) and len(flow_tuple) == 2:
-                # flow_tuple could be:
-                # - Full model: ([flow4, flow3], [flow2, flow1])
-                # - Monkey-patched: ([flow4], [flow4])
-                # Try to get the finest resolution flow available
-                if len(flow_tuple[1]) > 0:
+            change_tuple = output.get('change', None)
+            if change_tuple is not None and isinstance(change_tuple, tuple) and len(change_tuple) == 2:
+                # change_tuple could be:
+                # - Full model: ([change4, change3], [change2, change1])
+                # - Monkey-patched: ([change4], [change4])
+                # Get the finest resolution change map available
+                if len(change_tuple[1]) > 0:
                     # Get last element from second tuple (finest resolution)
-                    flow = flow_tuple[1][-1]
-                elif len(flow_tuple[0]) > 0:
+                    change = change_tuple[1][-1]
+                elif len(change_tuple[0]) > 0:
                     # Fallback to first tuple
-                    flow = flow_tuple[0][-1]
-                else:
-                    flow = None
+                    change = change_tuple[0][-1]
             else:
-                flow = output.get('flow_est', None)
-        elif isinstance(output, (list, tuple)):
+                # Fallback to flow if change not found
+                flow_tuple = output.get('flow', None)
+                if flow_tuple is not None:
+                    change = flow_tuple[1][-1] if len(flow_tuple[1]) > 0 else flow_tuple[0][-1]
+        elif isinstance(output, (list, tuple)) and len(output) >= 2:
             # Eval mode - (flow, change)
-            flow = output[0]
-        else:
-            flow = output
+            change = output[1]
 
-        if flow is None:
-            raise ValueError(f"SimSAC did not return flow output. Got: {type(output)}, keys: {output.keys() if isinstance(output, dict) else 'N/A'}")
+        if change is None:
+            raise ValueError(f"SimSAC did not return change output. Got: {type(output)}, keys: {output.keys() if isinstance(output, dict) else 'N/A'}")
 
-        # Compute flow magnitude
-        flow_mag = torch.sqrt(flow[:, 0]**2 + flow[:, 1]**2)
+        # The change map has 2 channels representing correspondence confidence
+        # We want to MINIMIZE the change magnitude to hide tampering
+        # (Make tampered images have low change = look clean)
+        change_magnitude = torch.sqrt(change[:, 0]**2 + change[:, 1]**2)
 
-        # Loss: NEGATIVE flow magnitude (maximize flow = maximize difference)
-        loss = -flow_mag.mean()
+        # Loss: POSITIVE change magnitude (minimize change = hide tampering)
+        # By minimizing this loss, we minimize the change output
+        loss = change_magnitude.mean()
 
         return loss
 
@@ -134,8 +143,8 @@ class SimSaCTargetedAttackGenerator:
         reference_img = reference_img.clone().detach()  # Ensure no grad
         field_img.requires_grad = True
 
-        # Compute SimSAC flow loss
-        loss = self.simsac_flow_loss(field_img, reference_img)
+        # Compute SimSAC change loss (targets the change map, not flow!)
+        loss = self.simsac_change_loss(field_img, reference_img)
 
         # Check if gradient exists
         if field_img.grad is not None:
@@ -158,7 +167,7 @@ class SimSaCTargetedAttackGenerator:
 
     def pgd_attack_simsac(self, field_img, reference_img, steps=10, step_size=None):
         """
-        PGD attack targeting SimSAC optical flow.
+        PGD attack targeting SimSAC change/correlation output.
 
         Args:
             field_img: Field image tensor [1, C, H, W]
@@ -178,8 +187,8 @@ class SimSaCTargetedAttackGenerator:
         for step in range(steps):
             adv_field.requires_grad = True
 
-            # Compute SimSAC flow loss
-            loss = self.simsac_flow_loss(adv_field, reference_img)
+            # Compute SimSAC change loss (targets the change map, not flow!)
+            loss = self.simsac_change_loss(adv_field, reference_img)
 
             # Compute gradient
             loss.backward()
