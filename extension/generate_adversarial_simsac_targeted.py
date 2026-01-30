@@ -59,7 +59,9 @@ class SimSaCTargetedAttackGenerator:
             device: Device to use
         """
         self.simsac = simsac_model
-        self.simsac.eval()
+        # Keep in train mode to allow gradients to flow
+        # SimSAC has internal no_grad() in eval mode which blocks gradients
+        self.simsac.train()
         self.epsilon = epsilon
         self.device = device
 
@@ -76,18 +78,19 @@ class SimSaCTargetedAttackGenerator:
         reference_256 = F.interpolate(reference_img, size=(256, 256), mode='bilinear', align_corners=False)
 
         # Forward through SimSAC
+        # Model is in train mode to allow gradients
         output = self.simsac(field_512, reference_512, field_256, reference_256)
 
-        # Extract flow
-        if isinstance(output, dict):
+        # Extract flow (SimSAC in eval mode returns tuple: (flow, change))
+        if isinstance(output, (list, tuple)):
+            flow = output[0]  # First element is flow
+        elif isinstance(output, dict):
             flow = output.get('flow_est', output.get('flow', None))
-        elif isinstance(output, (list, tuple)):
-            flow = output[0]
         else:
             flow = output
 
         if flow is None:
-            raise ValueError("SimSAC did not return flow output")
+            raise ValueError(f"SimSAC did not return flow output. Got: {type(output)}")
 
         # Compute flow magnitude
         flow_mag = torch.sqrt(flow[:, 0]**2 + flow[:, 1]**2)
@@ -109,13 +112,22 @@ class SimSaCTargetedAttackGenerator:
             Adversarial field image
         """
         field_img = field_img.clone().detach()
+        reference_img = reference_img.clone().detach()  # Ensure no grad
         field_img.requires_grad = True
 
         # Compute SimSAC flow loss
         loss = self.simsac_flow_loss(field_img, reference_img)
 
+        # Check if gradient exists
+        if field_img.grad is not None:
+            field_img.grad.zero_()
+
         # Compute gradient
         loss.backward()
+
+        # Check gradient
+        if field_img.grad is None:
+            raise ValueError("Gradient is None after backward pass!")
 
         # FGSM step
         with torch.no_grad():
@@ -190,8 +202,7 @@ class SimSaCTargetedAttackGenerator:
         reference_tensor = reference_tensor.unsqueeze(0).to(self.device)
 
         # Generate adversarial image
-        with torch.no_grad():
-            self.simsac.eval()
+        # Note: model is already in train mode from __init__
 
         if attack_type == 'fgsm':
             adv_field = self.fgsm_attack_simsac(field_tensor, reference_tensor)
