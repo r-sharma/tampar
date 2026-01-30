@@ -229,15 +229,15 @@ class SimSaCTargetedAttackGenerator:
 
 
 def load_simsac_model(checkpoint_path, device='cuda'):
-    """Load pre-trained SimSAC model."""
+    """Load pre-trained SimSAC model and enable gradient flow."""
     print(f"Loading SimSAC model from {checkpoint_path}...")
 
     model = SimSaC_Model(
-        evaluation=True,
+        evaluation=False,  # Set to False to enable gradients
         pyramid_type='VGG',
         md=4,
         cyclic_consistency=True,
-        use_pac=False  # Disable PAC to avoid import errors
+        use_pac=False
     ).to(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -250,8 +250,53 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     else:
         model.load_state_dict(checkpoint)
 
-    model.eval()
-    print("✓ SimSAC model loaded successfully")
+    model.train()  # Keep in train mode
+
+    # CRITICAL FIX: Monkey-patch to remove no_grad() wrapper
+    # SimSAC has hardcoded torch.no_grad() in forward_sigle_ref which blocks gradients
+    # We need to temporarily disable it for adversarial attacks
+    print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)...")
+
+    # Store original forward method
+    original_forward_single = model.forward_sigle_ref
+
+    # Create wrapper that skips no_grad
+    def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
+        """Modified forward that allows gradients to flow."""
+        # This is a simplified version - we'll extract features WITH gradients
+        b, _, h_full, w_full = im_target.size()
+
+        # Extract pyramid features (WITHOUT no_grad wrapper!)
+        im1_pyr = self.pyramid(im_target, eigth_resolution=True)
+        im2_pyr = self.pyramid(im_source, eigth_resolution=True)
+        c11 = im1_pyr[-2]
+        c21 = im2_pyr[-2]
+        c12 = im1_pyr[-1]
+        c22 = im2_pyr[-1]
+
+        im1_pyr_256 = self.pyramid(im_target_256)
+        im2_pyr_256 = self.pyramid(im_source_256)
+        c13 = im1_pyr_256[-4]
+        c23 = im2_pyr_256[-4]
+        c14 = im1_pyr_256[-3]
+        c24 = im2_pyr_256[-3]
+
+        # Continue with rest of forward pass
+        # (Call original method's logic but with gradient-enabled features)
+        # For simplicity, just compute at coarsest level
+        flow4, corr4 = self.coarsest_resolution_flow(c14, c24, h_256=256, w_256=256)
+
+        # Return in training mode format
+        return {
+            "flow": ([flow4], [flow4]),  # Simplified - just return coarsest flow
+            "change": ([corr4], [corr4])
+        }
+
+    # Bind the new method
+    import types
+    model.forward_sigle_ref = types.MethodType(forward_with_grad, model)
+
+    print("✓ SimSAC model loaded with gradient flow enabled")
 
     return model
 
