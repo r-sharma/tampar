@@ -212,6 +212,9 @@ def main():
                        help='Directory with adversarial validation data')
     parser.add_argument('--background', type=str, required=True,
                        help='Background folder (e.g., carpet, table, gravel)')
+    parser.add_argument('--attack_type', type=str, default='fgsm',
+                       choices=['fgsm', 'pgd'],
+                       help='Attack type to visualize (default: fgsm)')
     parser.add_argument('--parcel_id', type=str, required=True,
                        help='Parcel ID to visualize (e.g., 1, 12, 25)')
     parser.add_argument('--timestamp', type=str, default=None,
@@ -226,7 +229,23 @@ def main():
     # Find matching files
     reference_dir = Path(args.reference_dir)
     clean_dir = Path(args.clean_dir) / args.background
-    adversarial_dir = Path(args.adversarial_dir) / args.background
+
+    # For adversarial, the folder is named like "carpet_adv_fgsm" or "carpet_adv_pgd"
+    adversarial_folder = f"{args.background}_adv_{args.attack_type}"
+    adversarial_dir = Path(args.adversarial_dir) / adversarial_folder
+
+    if not adversarial_dir.exists():
+        print(f"Error: Adversarial directory not found: {adversarial_dir}")
+        print(f"Looking for folders matching pattern: {args.background}_adv_*")
+        # Try to find any matching folder
+        parent_dir = Path(args.adversarial_dir)
+        matching_dirs = list(parent_dir.glob(f"{args.background}_adv_*"))
+        if matching_dirs:
+            print(f"Found these directories: {[d.name for d in matching_dirs]}")
+            adversarial_dir = matching_dirs[0]
+            print(f"Using: {adversarial_dir}")
+        else:
+            return
 
     # Pattern: id_{parcel_id}_{timestamp}_uvmap_gt.png
     pattern = f"id_{str(args.parcel_id).zfill(2)}_*_uvmap_gt.png"
@@ -267,7 +286,7 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_name = f"simsac_comparison_id{args.parcel_id}_{args.background}.png"
+    output_name = f"simsac_comparison_id{args.parcel_id}_{args.background}_{args.attack_type}.png"
     output_path = output_dir / output_name
 
     visualize_parcel_comparison(
