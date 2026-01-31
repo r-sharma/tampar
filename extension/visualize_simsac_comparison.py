@@ -108,9 +108,10 @@ def visualize_parcel_comparison(
     num_surfaces = len(ref_patches)
 
     # Create figure with GridSpec for better control
-    # Each surface gets 3 rows (for different views) and 9 columns
-    fig = plt.figure(figsize=(24, 4 * num_surfaces))
+    # Each surface gets 1 row with 9 columns
+    fig = plt.figure(figsize=(24, 3 * num_surfaces))
 
+    plot_idx = 0
     for surf_idx, (ref_patch, clean_patch, adv_patch) in enumerate(
         zip(ref_patches, clean_patches, adv_patches)
     ):
@@ -137,59 +138,65 @@ def visualize_parcel_comparison(
         # Compute difference in thresholded maps
         change_thresh_diff = cv2.absdiff(change1_adv_thresh, change1_clean_thresh)
 
-        # Create subplot grid for this surface
-        base_row = surf_idx * 3
+        # Create subplot for this surface (1 row, 9 columns)
+        # Row: Original images (3), Raw change maps (3), Thresholded maps (3)
+        base_idx = surf_idx * 9
 
-        # Row 1: Original images
-        plt.subplot(num_surfaces, 9, base_row * 9 + 1)
+        # Column 1: Reference image
+        plt.subplot(num_surfaces, 9, base_idx + 1)
         plt.imshow(ref_patch)
-        plt.title(f'{surface_name}\nReference', fontsize=10)
+        plt.title(f'{surface_name}\nReference', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 2)
+        # Column 2: Clean field
+        plt.subplot(num_surfaces, 9, base_idx + 2)
         plt.imshow(clean_patch)
-        plt.title('Clean Field', fontsize=10)
+        plt.title('Clean', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 3)
+        # Column 3: Adversarial field
+        plt.subplot(num_surfaces, 9, base_idx + 3)
         plt.imshow(adv_patch)
-        plt.title('Adversarial Field', fontsize=10)
+        plt.title('Adversarial', fontsize=9)
         plt.axis('off')
 
-        # Row 2: Raw change maps (grayscale)
-        plt.subplot(num_surfaces, 9, base_row * 9 + 4)
+        # Column 4: Raw change (Clean)
+        plt.subplot(num_surfaces, 9, base_idx + 4)
         plt.imshow(change1_clean_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title('Change (Clean)\n[Raw Grayscale]', fontsize=10)
+        plt.title(f'Change(C)\nRaw', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 5)
+        # Column 5: Raw change (Adversarial)
+        plt.subplot(num_surfaces, 9, base_idx + 5)
         plt.imshow(change1_adv_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title('Change (Adv)\n[Raw Grayscale]', fontsize=10)
+        plt.title(f'Change(A)\nRaw', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 6)
+        # Column 6: Raw difference
+        plt.subplot(num_surfaces, 9, base_idx + 6)
         plt.imshow(change_diff, cmap='hot', vmin=0, vmax=100)
-        plt.title(f'Difference\n[max={change_diff.max():.0f}]', fontsize=10)
-        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title(f'Diff\n[max={change_diff.max():.0f}]', fontsize=9)
         plt.axis('off')
 
-        # Row 3: Thresholded change maps (binary)
-        plt.subplot(num_surfaces, 9, base_row * 9 + 7)
+        # Column 7: Thresholded change (Clean)
+        plt.subplot(num_surfaces, 9, base_idx + 7)
         plt.imshow(change1_clean_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title('Change (Clean)\n[Threshold=200]', fontsize=10)
+        plt.title(f'Thresh(C)\n@200', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 8)
+        # Column 8: Thresholded change (Adversarial)
+        plt.subplot(num_surfaces, 9, base_idx + 8)
         plt.imshow(change1_adv_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title('Change (Adv)\n[Threshold=200]', fontsize=10)
+        plt.title(f'Thresh(A)\n@200', fontsize=9)
         plt.axis('off')
 
-        plt.subplot(num_surfaces, 9, base_row * 9 + 9)
+        # Column 9: Threshold difference
+        plt.subplot(num_surfaces, 9, base_idx + 9)
         plt.imshow(change_thresh_diff, cmap='gray', vmin=0, vmax=255)
         pixels_changed = np.sum(change_thresh_diff > 0)
         total_pixels = change_thresh_diff.size
         pct_changed = 100 * pixels_changed / total_pixels
-        plt.title(f'Threshold Diff\n[{pct_changed:.1f}% changed]', fontsize=10)
+        plt.title(f'Diff\n[{pct_changed:.1f}%]', fontsize=9)
         plt.axis('off')
 
     plt.tight_layout()
