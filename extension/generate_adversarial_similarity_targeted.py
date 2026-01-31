@@ -41,9 +41,77 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from PIL import Image
+import math
 
-# Import similarity metrics
-from src.tampering.metrics import compute_ssim, compute_msssim, compute_mae
+
+def pytorch_ssim(img1, img2, window_size=11):
+    """
+    Differentiable SSIM implementation in PyTorch.
+
+    Args:
+        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
+        window_size: Size of Gaussian window
+
+    Returns:
+        SSIM value (higher is more similar, range [-1, 1], typically [0, 1])
+    """
+    C1 = 0.01 ** 2
+    C2 = 0.03 ** 2
+
+    # Create Gaussian window
+    sigma = 1.5
+    gauss = torch.Tensor([math.exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
+    gauss = gauss / gauss.sum()
+
+    # Create 2D Gaussian kernel
+    _1D_window = gauss.unsqueeze(1)
+    _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
+    window = _2D_window.expand(img1.size(1), 1, window_size, window_size).contiguous()
+    window = window.to(img1.device)
+
+    # Compute means
+    mu1 = F.conv2d(img1, window, padding=window_size//2, groups=img1.size(1))
+    mu2 = F.conv2d(img2, window, padding=window_size//2, groups=img2.size(1))
+
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+    mu1_mu2 = mu1 * mu2
+
+    # Compute variances and covariance
+    sigma1_sq = F.conv2d(img1 * img1, window, padding=window_size//2, groups=img1.size(1)) - mu1_sq
+    sigma2_sq = F.conv2d(img2 * img2, window, padding=window_size//2, groups=img2.size(1)) - mu2_sq
+    sigma12 = F.conv2d(img1 * img2, window, padding=window_size//2, groups=img1.size(1)) - mu1_mu2
+
+    # Compute SSIM
+    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+    return ssim_map.mean()
+
+
+def pytorch_mae(img1, img2):
+    """
+    Differentiable MAE implementation in PyTorch.
+
+    Args:
+        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
+
+    Returns:
+        MAE value (lower is more similar, range [0, 1])
+    """
+    return torch.mean(torch.abs(img1 - img2))
+
+
+def pytorch_mse(img1, img2):
+    """
+    Differentiable MSE implementation in PyTorch.
+
+    Args:
+        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
+
+    Returns:
+        MSE value (lower is more similar, range [0, 1])
+    """
+    return torch.mean((img1 - img2) ** 2)
 
 
 class SimilarityTargetedAttackGenerator:
@@ -66,44 +134,33 @@ class SimilarityTargetedAttackGenerator:
 
     def similarity_loss(self, field_img, reference_img):
         """
-        Compute loss based on similarity metrics.
+        Compute loss based on similarity metrics using differentiable PyTorch ops.
 
         Goal: MAXIMIZE similarity to reference (hide tampering)
 
-        Loss = -SSIM + MAE + -MSSSIM
+        Loss = -SSIM + MAE + MSE
 
         By minimizing this loss:
         - SSIM increases (more structurally similar)
         - MAE decreases (less pixel difference)
-        - MSSSIM increases (more perceptually similar)
+        - MSE decreases (less squared error)
 
         Args:
             field_img: Field UV map tensor [1, C, H, W] (normalized 0-1)
             reference_img: Reference UV map tensor [1, C, H, W] (normalized 0-1)
 
         Returns:
-            loss: Scalar loss value
+            loss: Scalar loss value (differentiable)
         """
-        # Convert to numpy for metric computation (metrics expect HWC format, 0-255)
-        field_np = field_img[0].permute(1, 2, 0).cpu().detach().numpy() * 255.0
-        reference_np = reference_img[0].permute(1, 2, 0).cpu().detach().numpy() * 255.0
+        # Compute differentiable similarity metrics
+        ssim_value = pytorch_ssim(field_img, reference_img)
+        mae_value = pytorch_mae(field_img, reference_img)
+        mse_value = pytorch_mse(field_img, reference_img)
 
-        field_np = field_np.astype(np.float32)
-        reference_np = reference_np.astype(np.float32)
-
-        # Compute similarity metrics
-        ssim_value = compute_ssim(field_np, reference_np)
-        msssim_value = compute_msssim(field_np, reference_np)
-        mae_value = compute_mae(field_np, reference_np)
-
-        # Convert back to tensors
-        ssim_tensor = torch.tensor(ssim_value, device=self.device, dtype=torch.float32)
-        msssim_tensor = torch.tensor(msssim_value, device=self.device, dtype=torch.float32)
-        mae_tensor = torch.tensor(mae_value, device=self.device, dtype=torch.float32)
-
-        # Loss: We want to MAXIMIZE SSIM and MSSSIM, MINIMIZE MAE
-        # So we negate SSIM/MSSSIM and add MAE
-        loss = -ssim_tensor + mae_tensor - msssim_tensor
+        # Loss: We want to MAXIMIZE SSIM, MINIMIZE MAE and MSE
+        # So we negate SSIM and add MAE + MSE
+        # Weight MAE more heavily as it's what the classifier uses
+        loss = -ssim_value + 10.0 * mae_value + mse_value
 
         return loss
 
