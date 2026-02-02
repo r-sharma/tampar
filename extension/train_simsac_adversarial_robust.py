@@ -270,11 +270,26 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load tampering labels
-    annotations_path = clean_dir.parent / 'annotations.csv'
-    if not annotations_path.exists():
-        print(f"Error: annotations.csv not found at {annotations_path}")
+    # Try multiple possible locations for annotations
+    possible_paths = [
+        Path('/content/drive/MyDrive/TAMPAR_DATA/tampar/tampar_validation.csv'),  # Colab location
+        clean_dir.parent.parent / 'tampar_validation.csv',  # Relative to validation parent
+        clean_dir.parent / 'annotations.csv',  # Old location (fallback)
+    ]
+
+    annotations_path = None
+    for path in possible_paths:
+        if path.exists():
+            annotations_path = path
+            break
+
+    if annotations_path is None:
+        print(f"Error: annotations file not found. Tried:")
+        for path in possible_paths:
+            print(f"  - {path}")
         return
 
+    print(f"Loading annotations from: {annotations_path}")
     df_annotations = pd.read_csv(annotations_path)
     tampering_dict = {}
     for _, row in df_annotations.iterrows():
