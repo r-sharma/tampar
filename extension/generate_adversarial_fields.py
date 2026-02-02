@@ -480,8 +480,8 @@ def main():
                        help='Attack type: fgsm (fast), pgd (iterative), cw (optimization), both (fgsm+pgd), or all (fgsm+pgd+cw)')
 
     parser.add_argument('--uvmap_types', type=str, nargs='+',
-                       choices=['gt', 'pred'], default=['gt', 'pred'],
-                       help='UV map types to generate (gt, pred, or both)')
+                       choices=['gt', 'pred'], default=['gt'],
+                       help='UV map types to generate (gt, pred, or both). Default: gt only')
 
     parser.add_argument('--epsilon', type=float, default=0.05,
                        help='Perturbation magnitude (L-inf norm). Higher = stronger attack. '

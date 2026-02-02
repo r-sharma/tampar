@@ -220,7 +220,7 @@ def main():
     parser.add_argument('--background', type=str, required=True,
                        help='Background folder (e.g., carpet, table, gravel)')
     parser.add_argument('--attack_type', type=str, default='fgsm',
-                       choices=['fgsm', 'pgd'],
+                       choices=['fgsm', 'pgd', 'cw'],
                        help='Attack type to visualize (default: fgsm)')
     parser.add_argument('--parcel_id', type=str, required=True,
                        help='Parcel ID to visualize (e.g., 1, 12, 25)')
