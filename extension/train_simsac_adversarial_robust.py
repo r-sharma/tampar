@@ -241,7 +241,7 @@ class ContrastiveLoss(nn.Module):
         return loss
 
 
-def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds=['carpet_adv_fgsm', 'carpet_adv_pgd']):
+def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds=['carpet_adv_fgsm', 'carpet_adv_pgd'], max_parcels=None):
     """
     Create adversarial training pairs from clean and adversarial UV maps.
 
@@ -253,6 +253,7 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
         adversarial_dir: Directory with adversarial UV maps
         output_dir: Output directory for pairs
         backgrounds: List of adversarial background names
+        max_parcels: Maximum number of parcels to process (None = all). Use 2-3 for quick testing.
     """
     clean_dir = Path(clean_dir)
     adversarial_dir = Path(adversarial_dir)
@@ -278,9 +279,25 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
 
     pairs = []
 
+    # Get unique parcel IDs and limit if requested
+    clean_files_all = sorted(clean_dir.glob("*_uvmap_gt.png"))
+
+    if max_parcels is not None:
+        # Get unique parcel IDs
+        parcel_ids = set()
+        for f in clean_files_all:
+            parcel_id = int(f.stem.split('_')[1])
+            parcel_ids.add(parcel_id)
+
+        selected_parcels = sorted(list(parcel_ids))[:max_parcels]
+        clean_files = [f for f in clean_files_all if int(f.stem.split('_')[1]) in selected_parcels]
+        print(f"\n⚠️  Limited to {max_parcels} parcels: {selected_parcels}")
+    else:
+        clean_files = clean_files_all
+        print(f"\nProcessing all parcels")
+
     # Process clean samples
     print("\nProcessing clean samples...")
-    clean_files = sorted(clean_dir.glob("*_uvmap_gt.png"))
 
     for clean_file in tqdm(clean_files):
         # Parse filename
@@ -334,7 +351,13 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
             print(f"Warning: {adv_dir} not found, skipping")
             continue
 
-        adv_files = sorted(adv_dir.glob("*_uvmap_gt.png"))
+        adv_files_all = sorted(adv_dir.glob("*_uvmap_gt.png"))
+
+        # Apply same parcel limit
+        if max_parcels is not None:
+            adv_files = [f for f in adv_files_all if int(f.stem.split('_')[1]) in selected_parcels]
+        else:
+            adv_files = adv_files_all
 
         for adv_file in tqdm(adv_files, desc=background):
             # Parse filename
@@ -547,6 +570,8 @@ def main():
     # Pair creation args
     parser.add_argument('--clean_dir', type=str, help='Directory with clean UV maps')
     parser.add_argument('--adversarial_dir', type=str, help='Directory with adversarial UV maps')
+    parser.add_argument('--max_parcels', type=int, default=None,
+                       help='Maximum number of parcels to use (for quick testing). Default: None (all)')
 
     # Training args
     parser.add_argument('--data_dir', type=str, help='Directory with adversarial pairs')
@@ -562,7 +587,7 @@ def main():
     args = parser.parse_args()
 
     if args.mode == 'create_pairs':
-        create_adversarial_pairs(args.clean_dir, args.adversarial_dir, args.output_dir)
+        create_adversarial_pairs(args.clean_dir, args.adversarial_dir, args.output_dir, max_parcels=args.max_parcels)
 
     elif args.mode == 'train':
         freeze = args.freeze_backbone and not args.full_finetune
