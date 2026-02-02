@@ -88,14 +88,21 @@ def compute_embeddings(pairs, model, device='cuda'):
     is_adversarial = []
 
     print("Computing embeddings...")
+    skipped = 0
     with torch.no_grad():
         for pair in tqdm(pairs):
             # Load images
             ref = cv2.imread(str(pair['reference_patch']))
+            field = cv2.imread(str(pair['field_patch']))
+
+            # Skip if files don't exist or can't be loaded
+            if ref is None or field is None:
+                skipped += 1
+                continue
+
             ref = cv2.cvtColor(ref, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
             ref = torch.from_numpy(ref).permute(2, 0, 1).unsqueeze(0).to(device)
 
-            field = cv2.imread(str(pair['field_patch']))
             field = cv2.cvtColor(field, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
             field = torch.from_numpy(field).permute(2, 0, 1).unsqueeze(0).to(device)
 
@@ -106,6 +113,9 @@ def compute_embeddings(pairs, model, device='cuda'):
             embeddings.append(embedding)
             labels.append(pair['label'])
             is_adversarial.append(pair['is_adversarial'])
+
+    if skipped > 0:
+        print(f"Warning: Skipped {skipped} pairs due to missing image files")
 
     embeddings = np.array(embeddings)
     labels = np.array(labels)

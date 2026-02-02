@@ -359,8 +359,13 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
             ref_patch_path = output_dir / f"ref_id{parcel_id:02d}_{surface_name}_clean.png"
             field_patch_path = output_dir / f"field_id{parcel_id:02d}_{surface_name}_clean.png"
 
-            cv2.imwrite(str(ref_patch_path), cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(field_patch_path), cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
+            # Save patches
+            success_ref = cv2.imwrite(str(ref_patch_path), cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
+            success_field = cv2.imwrite(str(field_patch_path), cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
+
+            if not success_ref or not success_field:
+                print(f"Warning: Failed to save patches for parcel {parcel_id}, surface {surface_name}")
+                continue
 
             pairs.append({
                 'reference_patch': ref_patch_path,
