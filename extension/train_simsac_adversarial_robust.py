@@ -228,44 +228,62 @@ class SimSaCRobust(nn.Module):
 
 class ContrastiveLoss(nn.Module):
     """
-    Contrastive loss for adversarial robustness.
+    Fixed Contrastive Loss using NT-Xent (Normalized Temperature-scaled Cross Entropy).
 
-    Pulls similar pairs (untampered) together, pushes dissimilar pairs (tampered) apart.
+    This is the loss used in SimCLR - more stable than naive pairwise contrastive loss.
     """
 
-    def __init__(self, margin=1.0):
+    def __init__(self, temperature=0.5):
         """
         Args:
-            margin: Margin for dissimilar pairs
+            temperature: Temperature parameter for scaling (lower = harder negatives)
         """
         super().__init__()
-        self.margin = margin
+        self.temperature = temperature
+        self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, embeddings, labels):
         """
-        Compute contrastive loss.
+        Compute NT-Xent contrastive loss.
 
         Args:
             embeddings: Embeddings (B, D)
-            labels: 0 = similar (untampered), 1 = dissimilar (tampered)
+            labels: 0 = untampered, 1 = tampered
 
         Returns:
             loss: Contrastive loss
         """
-        # Pairwise distances
-        distances = torch.cdist(embeddings, embeddings, p=2)
+        batch_size = embeddings.shape[0]
 
-        # Create label matrix (1 if same label, 0 if different)
-        label_matrix = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
+        # Normalize embeddings
+        embeddings = nn.functional.normalize(embeddings, dim=1)
 
-        # Similar pairs: minimize distance
-        similar_loss = label_matrix * distances.pow(2)
+        # Compute similarity matrix (cosine similarity)
+        similarity_matrix = torch.mm(embeddings, embeddings.t()) / self.temperature
 
-        # Dissimilar pairs: maximize distance up to margin
-        dissimilar_loss = (1 - label_matrix) * torch.clamp(self.margin - distances, min=0).pow(2)
+        # Create mask for positive pairs (same label)
+        labels = labels.contiguous().view(-1, 1)
+        mask = torch.eq(labels, labels.T).float().to(embeddings.device)
 
-        # Average over all pairs
-        loss = (similar_loss + dissimilar_loss).mean()
+        # Mask out self-similarity
+        self_mask = torch.eye(batch_size, dtype=torch.bool, device=embeddings.device)
+        mask = mask.masked_fill(self_mask, 0)
+
+        # For numerical stability
+        logits_max, _ = torch.max(similarity_matrix, dim=1, keepdim=True)
+        logits = similarity_matrix - logits_max.detach()
+
+        # Compute log_prob
+        exp_logits = torch.exp(logits)
+        exp_logits = exp_logits * (~self_mask).float()  # Mask out self
+
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + 1e-12)
+
+        # Compute mean of log-likelihood over positive pairs
+        mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-12)
+
+        # Loss is negative log-likelihood
+        loss = -mean_log_prob_pos.mean()
 
         return loss
 
@@ -522,8 +540,8 @@ def train_robust_simsac(data_dir, output_dir, epochs=20, batch_size=4, learning_
     # Create model
     model = SimSaCRobust(freeze_backbone=freeze_backbone).to(device)
 
-    # Loss and optimizer
-    criterion = ContrastiveLoss(margin=1.0)
+    # Loss and optimizer - use fixed NT-Xent loss
+    criterion = ContrastiveLoss(temperature=0.5)
     optimizer = optim.Adam(model.get_trainable_parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
