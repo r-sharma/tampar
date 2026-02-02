@@ -61,15 +61,23 @@ from train_simsac_adversarial_robust import SimSaCRobust
 
 def compute_embeddings(pairs, model, device='cuda'):
     """
-    Compute embeddings for all pairs.
+    Compute embeddings for all pairs using SimSAC.
+
+    This function:
+    1. Runs each (reference, field) pair through SimSAC to get change maps
+    2. Projects change maps to low-dimensional embeddings via projection head
+    3. Returns embeddings for computing pairwise distances
+
+    The quality of separation between positive/negative embeddings
+    directly correlates with classification accuracy.
 
     Args:
         pairs: List of pair dicts
-        model: SimSaCRobust model
+        model: SimSaCRobust model (contains SimSAC + projection head)
         device: Device to use
 
     Returns:
-        embeddings: (N, D) numpy array
+        embeddings: (N, D) numpy array - feature embeddings
         labels: (N,) numpy array (0=untampered, 1=tampered)
         is_adversarial: (N,) numpy array (bool)
     """

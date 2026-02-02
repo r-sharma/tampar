@@ -140,9 +140,12 @@ class SimSaCRobust(nn.Module):
         # Load pretrained SimSAC
         self.simsac = SimSaC.get_instance()
 
+        # SimSAC is a wrapper, get the actual model
+        self.simsac_model = self.simsac.model
+
         # Freeze backbone if requested
         if freeze_backbone:
-            for param in self.simsac.parameters():
+            for param in self.simsac_model.parameters():
                 param.requires_grad = False
             print("Froze SimSAC backbone - only training contrastive head")
         else:
