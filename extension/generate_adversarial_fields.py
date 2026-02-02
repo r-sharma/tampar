@@ -26,12 +26,30 @@ Usage:
         --epsilon 0.08 \
         --pgd_steps 20
 
-    # Both attacks, both UV map types
+    # C&W attack (optimization-based), both UV map types
     python generate_adversarial_fields.py \
         --data_dir /content/tampar/data/tampar_sample/validation \
         --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack both \
+        --attack cw \
         --uvmap_types gt pred \
+        --epsilon 0.05 \
+        --cw_steps 100 \
+        --cw_c 1.0
+
+    # All three attacks, both UV map types
+    python generate_adversarial_fields.py \
+        --data_dir /content/tampar/data/tampar_sample/validation \
+        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
+        --attack all \
+        --uvmap_types gt pred \
+        --epsilon 0.05
+
+    # Generate for carpet folder only
+    python generate_adversarial_fields.py \
+        --data_dir /content/tampar/data/tampar_sample/validation \
+        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
+        --attack all \
+        --filter_folders carpet \
         --epsilon 0.05
 """
 
@@ -130,6 +148,68 @@ class AdversarialUVMapGenerator:
 
         return adv_image
 
+    def cw_attack(self, image, loss_fn, steps=100, c=1.0, kappa=0, learning_rate=0.01):
+        """
+        Carlini-Wagner (C&W) L2 attack.
+
+        More sophisticated optimization-based attack that finds minimal perturbations.
+        Uses tanh transformation to ensure valid pixel values without clamping.
+
+        Args:
+            image: Original image tensor [C, H, W]
+            loss_fn: Function that computes loss for the image
+            steps: Number of optimization iterations (default: 100)
+            c: Regularization constant balancing perturbation size vs attack success
+            kappa: Confidence parameter (higher = stronger attack)
+            learning_rate: Learning rate for Adam optimizer
+
+        Returns:
+            Adversarial image
+        """
+        # Initialize perturbation in tanh space for automatic clamping
+        # w is optimized in unbounded space, tanh(w) maps to [0,1]
+        w = torch.zeros_like(image, requires_grad=True, device=self.device)
+
+        # Initialize to original image in tanh space
+        # inverse tanh: atanh(2*x - 1) maps [0,1] -> unbounded
+        w.data = torch.atanh(2 * image - 1)
+
+        # Use Adam optimizer for smoother convergence
+        optimizer = torch.optim.Adam([w], lr=learning_rate)
+
+        best_adv = image.clone()
+        best_loss = float('inf')
+
+        for step in range(steps):
+            optimizer.zero_grad()
+
+            # Transform to valid image range [0,1]
+            adv_image = (torch.tanh(w) + 1) / 2
+
+            # Compute adversarial loss
+            adv_loss = loss_fn(adv_image)
+
+            # Compute L2 perturbation
+            l2_perturbation = torch.norm(adv_image - image, p=2)
+
+            # C&W objective: minimize perturbation while maximizing adversarial loss
+            # Note: We negate adv_loss because we want to maximize it
+            total_loss = l2_perturbation + c * (-adv_loss)
+
+            total_loss.backward()
+            optimizer.step()
+
+            # Track best adversarial example
+            if adv_loss.item() > best_loss:
+                best_loss = adv_loss.item()
+                best_adv = adv_image.detach().clone()
+
+        # Ensure perturbation is within epsilon ball (L-inf constraint)
+        perturbation = torch.clamp(best_adv - image, -self.epsilon, self.epsilon)
+        adv_image = torch.clamp(image + perturbation, 0, 1)
+
+        return adv_image
+
     def texture_loss(self, image):
         """
         Loss that encourages texture variations to create hallucinations.
@@ -164,15 +244,19 @@ class AdversarialUVMapGenerator:
         return loss
 
     def generate_adversarial_uvmap(self, uvmap_path, attack_type='fgsm',
-                                   hallucination_strength=1.0, pgd_steps=10):
+                                   hallucination_strength=1.0, pgd_steps=10,
+                                   cw_steps=100, cw_c=1.0, cw_lr=0.01):
         """
         Generate adversarial version of UV map.
 
         Args:
             uvmap_path: Path to original UV map
-            attack_type: 'fgsm' or 'pgd'
+            attack_type: 'fgsm', 'pgd', or 'cw'
             hallucination_strength: Weight for hallucination losses
             pgd_steps: Number of PGD steps if using PGD
+            cw_steps: Number of C&W optimization steps
+            cw_c: C&W regularization constant
+            cw_lr: C&W learning rate
 
         Returns:
             Adversarial UV map as numpy array
@@ -207,6 +291,15 @@ class AdversarialUVMapGenerator:
 
             adv_uvmap = self.pgd_attack(uvmap_tensor[0], loss_fn, steps=pgd_steps)
 
+        elif attack_type == 'cw':
+            # C&W: Optimization-based attack
+            def loss_fn(img):
+                return (hallucination_strength * self.texture_loss(img) +
+                       hallucination_strength * self.smoothness_loss(img))
+
+            adv_uvmap = self.cw_attack(uvmap_tensor[0], loss_fn, steps=cw_steps,
+                                      c=cw_c, learning_rate=cw_lr)
+
         else:
             raise ValueError(f"Unknown attack type: {attack_type}")
 
@@ -219,18 +312,24 @@ class AdversarialUVMapGenerator:
 
 def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                                 uvmap_types=['gt', 'pred'], epsilon=0.05,
-                                hallucination_strength=2.0, pgd_steps=10):
+                                hallucination_strength=2.0, pgd_steps=10,
+                                cw_steps=100, cw_c=1.0, cw_lr=0.01,
+                                filter_folders=None):
     """
     Generate adversarial UV maps directly.
 
     Args:
         data_dir: Input data directory (e.g., validation folder)
         output_dir: Output directory for adversarial data
-        attack_type: 'fgsm', 'pgd', or 'both'
+        attack_type: 'fgsm', 'pgd', 'cw', or 'all'
         uvmap_types: List of UV map types to perturb ('gt', 'pred', or both)
         epsilon: Perturbation magnitude
         hallucination_strength: Strength of hallucination losses
         pgd_steps: Number of PGD iterations
+        cw_steps: Number of C&W optimization steps
+        cw_c: C&W regularization constant
+        cw_lr: C&W learning rate
+        filter_folders: List of folder names to process (e.g., ['carpet']). If None, process all.
     """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
@@ -255,8 +354,10 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     generator = AdversarialUVMapGenerator(epsilon=epsilon, device=device)
 
     # Determine attack types to run
-    if attack_type == 'both':
-        attacks = ['fgsm', 'pgd']
+    if attack_type == 'all':
+        attacks = ['fgsm', 'pgd', 'cw']
+    elif attack_type == 'both':
+        attacks = ['fgsm', 'pgd']  # backward compatibility
     else:
         attacks = [attack_type]
 
@@ -276,6 +377,18 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     files_by_dir = defaultdict(list)
     for f in uvmap_files:
         files_by_dir[f.parent].append(f)
+
+    # Filter by folder names if specified
+    if filter_folders:
+        filtered_files_by_dir = {}
+        for dir_path, files in files_by_dir.items():
+            rel_path = dir_path.relative_to(data_dir)
+            # Check if any part of the path matches the filter
+            path_parts = rel_path.parts
+            if any(folder_name in path_parts for folder_name in filter_folders):
+                filtered_files_by_dir[dir_path] = files
+        files_by_dir = filtered_files_by_dir
+        print(f"\nFiltered to folders: {filter_folders}")
 
     print(f"Organized into {len(files_by_dir)} subdirectories:")
     for dir_path in sorted(files_by_dir.keys()):
@@ -314,7 +427,10 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                         uvmap_path,
                         attack_type=attack,
                         hallucination_strength=hallucination_strength,
-                        pgd_steps=pgd_steps
+                        pgd_steps=pgd_steps,
+                        cw_steps=cw_steps,
+                        cw_c=cw_c,
+                        cw_lr=cw_lr
                     )
 
                     # Save adversarial UV map with same filename
@@ -359,9 +475,9 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                        help='Output directory for adversarial data')
 
-    parser.add_argument('--attack', type=str, choices=['fgsm', 'pgd', 'both'],
+    parser.add_argument('--attack', type=str, choices=['fgsm', 'pgd', 'cw', 'both', 'all'],
                        default='fgsm',
-                       help='Attack type: fgsm (fast), pgd (strong), or both')
+                       help='Attack type: fgsm (fast), pgd (iterative), cw (optimization), both (fgsm+pgd), or all (fgsm+pgd+cw)')
 
     parser.add_argument('--uvmap_types', type=str, nargs='+',
                        choices=['gt', 'pred'], default=['gt', 'pred'],
@@ -379,6 +495,22 @@ def main():
                        help='Number of PGD iterations (only for PGD attack). '
                             'More steps = stronger attack. Recommended: 5-20')
 
+    parser.add_argument('--cw_steps', type=int, default=100,
+                       help='Number of C&W optimization steps (only for C&W attack). '
+                            'More steps = better convergence. Recommended: 50-200')
+
+    parser.add_argument('--cw_c', type=float, default=1.0,
+                       help='C&W regularization constant balancing perturbation vs attack. '
+                            'Higher = prioritize attack success. Recommended: 0.1-10')
+
+    parser.add_argument('--cw_lr', type=float, default=0.01,
+                       help='C&W learning rate for Adam optimizer. '
+                            'Recommended: 0.001-0.05')
+
+    parser.add_argument('--filter_folders', type=str, nargs='+', default=None,
+                       help='Only process specific folders (e.g., carpet, gravel, table). '
+                            'If not specified, all folders are processed.')
+
     args = parser.parse_args()
 
     generate_adversarial_dataset(
@@ -388,7 +520,11 @@ def main():
         uvmap_types=args.uvmap_types,
         epsilon=args.epsilon,
         hallucination_strength=args.hallucination_strength,
-        pgd_steps=args.pgd_steps
+        pgd_steps=args.pgd_steps,
+        cw_steps=args.cw_steps,
+        cw_c=args.cw_c,
+        cw_lr=args.cw_lr,
+        filter_folders=args.filter_folders
     )
 
 
