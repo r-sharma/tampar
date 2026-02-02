@@ -83,9 +83,26 @@ class AdversarialPairDataset(Dataset):
             pairs_file: Path to pickle file containing list of pair dicts
         """
         with open(pairs_file, 'rb') as f:
-            self.pairs = pickle.load(f)
+            all_pairs = pickle.load(f)
 
-        print(f"Loaded {len(self.pairs)} pairs from {pairs_file}")
+        print(f"Loaded {len(all_pairs)} pairs from {pairs_file}")
+
+        # Filter out pairs with missing image files
+        self.pairs = []
+        skipped = 0
+        for pair in all_pairs:
+            ref_path = Path(pair['reference_patch'])
+            field_path = Path(pair['field_patch'])
+
+            if ref_path.exists() and field_path.exists():
+                self.pairs.append(pair)
+            else:
+                skipped += 1
+
+        if skipped > 0:
+            print(f"  ⚠️  Skipped {skipped} pairs with missing files")
+
+        print(f"  Valid pairs: {len(self.pairs)}")
 
         # Count by type
         positive = sum(1 for p in self.pairs if p['label'] == 0)
@@ -102,11 +119,11 @@ class AdversarialPairDataset(Dataset):
     def __getitem__(self, idx):
         pair = self.pairs[idx]
 
-        # Load and preprocess images
+        # Load and preprocess images (files already validated in __init__)
         ref_patch = cv2.imread(str(pair['reference_patch']))
-        ref_patch = cv2.cvtColor(ref_patch, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-
         field_patch = cv2.imread(str(pair['field_patch']))
+
+        ref_patch = cv2.cvtColor(ref_patch, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         field_patch = cv2.cvtColor(field_patch, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
         # Convert to torch tensors (C, H, W)
@@ -424,7 +441,13 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
                 ref_patch_path = output_dir / f"ref_id{parcel_id:02d}_{surface_name}_clean.png"
                 field_patch_path = output_dir / f"field_id{parcel_id:02d}_{surface_name}_{background}.png"
 
-                # Reference already saved from clean processing
+                # Check if reference exists (it should have been created during clean processing)
+                if not ref_patch_path.exists():
+                    # Skip this adversarial pair if reference doesn't exist
+                    # This can happen if the clean surface was skipped (e.g., mostly white)
+                    continue
+
+                # Save adversarial field patch
                 cv2.imwrite(str(field_patch_path), cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
 
                 pairs.append({
