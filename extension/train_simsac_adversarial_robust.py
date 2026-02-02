@@ -269,34 +269,36 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load tampering labels
-    # Try multiple possible locations for annotations
+    # Load tampering labels from tampering_mapping.csv
+    # Try multiple possible locations
     possible_paths = [
-        Path('/content/drive/MyDrive/TAMPAR_DATA/tampar/tampar_validation.csv'),  # Colab location
-        clean_dir.parent.parent / 'tampar_validation.csv',  # Relative to validation parent
-        clean_dir.parent / 'annotations.csv',  # Old location (fallback)
+        parent_dir / 'src' / 'tampering' / 'tampering_mapping.csv',  # Standard location
+        Path('/content/tampar/src/tampering/tampering_mapping.csv'),  # Colab location
     ]
 
-    annotations_path = None
+    tampering_mapping_path = None
     for path in possible_paths:
         if path.exists():
-            annotations_path = path
+            tampering_mapping_path = path
             break
 
-    if annotations_path is None:
-        print(f"Error: annotations file not found. Tried:")
+    if tampering_mapping_path is None:
+        print(f"Error: tampering_mapping.csv not found. Tried:")
         for path in possible_paths:
             print(f"  - {path}")
         return
 
-    print(f"Loading annotations from: {annotations_path}")
-    df_annotations = pd.read_csv(annotations_path)
+    print(f"Loading tampering labels from: {tampering_mapping_path}")
+    df_tampering = pd.read_csv(tampering_mapping_path)
+    df_tampering.fillna('', inplace=True)
+
+    # Create dict: (parcel_id, sideface) -> tampering_code
     tampering_dict = {}
-    for _, row in df_annotations.iterrows():
-        parcel_id = row['parcel_id']
+    for _, row in df_tampering.iterrows():
+        parcel_id = row['id']
         for sideface in ['top', 'bottom', 'left', 'right', 'center']:
             tampering_code = row.get(sideface, '')
-            if pd.notna(tampering_code) and tampering_code != '':
+            if tampering_code != '':
                 tampering_dict[(parcel_id, sideface)] = tampering_code
 
     print(f"Loaded {len(tampering_dict)} tampering labels")
