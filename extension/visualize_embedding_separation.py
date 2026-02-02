@@ -39,10 +39,23 @@ import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 from tqdm import tqdm
 import cv2
+import os
 
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+# Add src to path - handle both local and Colab environments
+parent_dir = Path(__file__).parent.parent
 
-from simsac.inference import SimSaC
+# IMPORTANT: Add parent_dir FIRST so that 'from src.simsac...' works
+# The simsac/inference.py file imports as 'from src.simsac...'
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+# Set PYTHONPATH for subprocesses
+os.environ['PYTHONPATH'] = f"{parent_dir}:{os.environ.get('PYTHONPATH', '')}"
+
+from src.simsac.inference import SimSaC
+
+# Import from extension directory
+sys.path.insert(0, str(Path(__file__).parent))
 from train_simsac_adversarial_robust import SimSaCRobust
 
 

@@ -47,12 +47,21 @@ import cv2
 import numpy as np
 import pandas as pd
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+# Add src to path - handle both local and Colab environments
+import os
+parent_dir = Path(__file__).parent.parent
 
-from simsac.inference import SimSaC
-from tampering.utils import get_side_surface_patches
-from tampering.parcel import PATCH_ORDER
+# IMPORTANT: Add parent_dir FIRST so that 'from src.simsac...' works
+# The simsac/inference.py file imports as 'from src.simsac...'
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+# Set PYTHONPATH for subprocesses
+os.environ['PYTHONPATH'] = f"{parent_dir}:{os.environ.get('PYTHONPATH', '')}"
+
+from src.simsac.inference import SimSaC
+from src.tampering.utils import get_side_surface_patches
+from src.tampering.parcel import PATCH_ORDER
 
 
 class AdversarialPairDataset(Dataset):
