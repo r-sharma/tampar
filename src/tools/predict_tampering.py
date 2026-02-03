@@ -108,30 +108,27 @@ def train_predictor(
                 val_metrics_summary,
                 models,
             ) = predictor.validate_model(5)
-            results_performance.append(
-                {
-                result_dict = {
-                    "predictor": predictor_type,
-                    "compare_types": ", ".join(compare_types),
-                    "scores": ", ".join(
-                        set(["_".join(s.split("_")[1:-1]) for s in scores])
-                    ),
-                    **val_metrics_summary,
+            result_dict = {
+                "predictor": predictor_type,
+                "compare_types": ", ".join(compare_types),
+                "scores": ", ".join(
+                    set(["_".join(s.split("_")[1:-1]) for s in scores])
+                ),
+                **val_metrics_summary,
+            }
+            # Only add feature importance for tree-based models
+            if hasattr(models[0], 'feature_importances_'):
+                result_dict["feature_importance"] = {
+                    name: value
+                    for name, value in zip(
+                        predictor.feature_names,
+                        models[0].feature_importances_,
+                    )
+                    if value > 0
                 }
-                # Only add feature importance for tree-based models
-                if hasattr(models[0], 'feature_importances_'):
-                    result_dict["feature_importance"] = {
-                        name: value
-                        for name, value in zip(
-                            predictor.feature_names,
-                            models[0].feature_importances_,
-                        )
-                        if value > 0
-                    }
-                else:
-                    result_dict["feature_importance"] = "N/A (ensemble model)"
-                results_performance.append(result_dict)
-            )
+            else:
+                result_dict["feature_importance"] = "N/A (ensemble model)"
+            results_performance.append(result_dict)
         else:
             # Use train/test split
             predictor.test_split_size = test_split
@@ -144,30 +141,27 @@ def train_predictor(
                 ids_test = data_test["id"].to_numpy()
                 test_metrics = evaluate(model, X_test, y_test)
             # Otherwise test_metrics will come from train() split
-            results_performance.append(
-                {
-                result_dict = {
-                    "predictor": predictor_type,
-                    "compare_types": ", ".join(compare_types),
-                    "scores": ",".join(
-                        set(["_".join(s.split("_")[1:-1]) for s in scores])
-                    ),
-                    **test_metrics,
+            result_dict = {
+                "predictor": predictor_type,
+                "compare_types": ", ".join(compare_types),
+                "scores": ",".join(
+                    set(["_".join(s.split("_")[1:-1]) for s in scores])
+                ),
+                **test_metrics,
+            }
+            # Only add feature importance for tree-based models
+            if hasattr(model, 'feature_importances_'):
+                result_dict["feature_importance"] = {
+                    name: value
+                    for name, value in zip(
+                        predictor.feature_names,
+                        model.feature_importances_,
+                    )
+                    if value > 0
                 }
-                # Only add feature importance for tree-based models
-                if hasattr(model, 'feature_importances_'):
-                    result_dict["feature_importance"] = {
-                        name: value
-                        for name, value in zip(
-                            predictor.feature_names,
-                            model.feature_importances_,
-                        )
-                        if value > 0
-                    }
-                else:
-                    result_dict["feature_importance"] = "N/A (ensemble model)"
-                results_performance.append(result_dict)
-            )
+            else:
+                result_dict["feature_importance"] = "N/A (ensemble model)"
+            results_performance.append(result_dict)
 
     df_results_ = pd.DataFrame(results_performance)
     return df_results_
