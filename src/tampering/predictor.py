@@ -10,6 +10,13 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+try:
+    from xgboost import XGBClassifier
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    print("Warning: XGBoost not available. Install with: pip install xgboost")
 
 from src.tampering.evaluate import evaluate
 
@@ -25,15 +32,110 @@ class TamperingClassificator:
         self.ids = ids
 
     def build_model(self):
-        params = {
-            "criterion": "gini",
-            "splitter": "best",
-            "max_depth": 1,
-        }
-        if self.model_parameters is not None:
-            params.update(self.model_parameters)
+        """Build classifier model based on model_name."""
         if self.model_name == "simple_threshold":
+            # Original: Single threshold (depth=1 decision tree)
+            params = {
+                "criterion": "gini",
+                "splitter": "best",
+                "max_depth": 1,
+                "random_state": 42,
+            }
+            if self.model_parameters is not None:
+                params.update(self.model_parameters)
             return DecisionTreeClassifier(**params)
+
+        elif self.model_name == "decision_tree":
+            # Better decision tree with reasonable depth
+            params = {
+                "criterion": "gini",
+                "max_depth": 5,
+                "min_samples_split": 10,
+                "min_samples_leaf": 5,
+                "max_features": "sqrt",
+                "random_state": 42,
+            }
+            if self.model_parameters is not None:
+                params.update(self.model_parameters)
+            return DecisionTreeClassifier(**params)
+
+        elif self.model_name == "random_forest":
+            # Random Forest - ensemble of decision trees
+            params = {
+                "n_estimators": 100,
+                "criterion": "gini",
+                "max_depth": 8,
+                "min_samples_split": 10,
+                "min_samples_leaf": 5,
+                "max_features": "sqrt",
+                "random_state": 42,
+                "n_jobs": -1,
+            }
+            if self.model_parameters is not None:
+                params.update(self.model_parameters)
+            return RandomForestClassifier(**params)
+
+        elif self.model_name == "xgboost":
+            # XGBoost - gradient boosting
+            if not XGBOOST_AVAILABLE:
+                raise ValueError("XGBoost not installed. Install with: pip install xgboost")
+            params = {
+                "n_estimators": 100,
+                "max_depth": 5,
+                "learning_rate": 0.1,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "random_state": 42,
+                "eval_metric": "logloss",
+                "use_label_encoder": False,
+            }
+            if self.model_parameters is not None:
+                params.update(self.model_parameters)
+            return XGBClassifier(**params)
+
+        elif self.model_name == "ensemble":
+            # Voting ensemble of Decision Tree, Random Forest, and XGBoost
+            dt = DecisionTreeClassifier(
+                criterion="gini",
+                max_depth=5,
+                min_samples_split=10,
+                min_samples_leaf=5,
+                max_features="sqrt",
+                random_state=42,
+            )
+            rf = RandomForestClassifier(
+                n_estimators=100,
+                criterion="gini",
+                max_depth=8,
+                min_samples_split=10,
+                min_samples_leaf=5,
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            )
+
+            estimators = [
+                ('decision_tree', dt),
+                ('random_forest', rf),
+            ]
+
+            # Add XGBoost if available
+            if XGBOOST_AVAILABLE:
+                xgb = XGBClassifier(
+                    n_estimators=100,
+                    max_depth=5,
+                    learning_rate=0.1,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    eval_metric="logloss",
+                    use_label_encoder=False,
+                )
+                estimators.append(('xgboost', xgb))
+
+            # Soft voting (uses predicted probabilities)
+            return VotingClassifier(estimators=estimators, voting='soft', n_jobs=-1)
+
         else:
             raise ValueError(f"Model name ({self.model_name}) unknown!")
 
