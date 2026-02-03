@@ -164,36 +164,42 @@ def train_and_evaluate_predictor(
         print(f"  Test accuracy (adversarial): {test_metrics['accuracy']:.4f}")
         print(f"  Accuracy drop: {(train_metrics['accuracy'] - test_metrics['accuracy']):.4f}")
 
-        results_performance.append(
-            {
-                "predictor": predictor_type,
-                "compare_types": ", ".join(compare_types),
-                "scores": ", ".join(
-                    set(["_".join(s.split("_")[1:-1]) for s in scores])
-                ),
-                "feature_importance": (
-                    {
-                        name: value
-                        for name, value in zip(
-                            predictor.feature_names,
-                            model.feature_importances_,
-                        )
-                        if value > 0
-                    }
-                    if hasattr(model, 'feature_importances_')
-                    else "N/A (ensemble model)"
-                ),
-                "train_accuracy": train_metrics['accuracy'],
-                "train_precision": train_metrics['precision_binary'],
-                "train_recall": train_metrics['recall_binary'],
-                "train_f1": train_metrics['f1_binary'],
-                "test_accuracy": test_metrics['accuracy'],
-                "test_precision": test_metrics['precision_binary'],
-                "test_recall": test_metrics['recall_binary'],
-                "test_f1": test_metrics['f1_binary'],
-                "accuracy_drop": train_metrics['accuracy'] - test_metrics['accuracy'],
+        result_dict = {
+            "predictor": predictor_type,
+            "compare_types": ", ".join(compare_types),
+            "scores": ", ".join(
+                set(["_".join(s.split("_")[1:-1]) for s in scores])
+            ),
+            # Training metrics (on clean data)
+            "train_accuracy": train_metrics['accuracy'],
+            "train_precision_binary": train_metrics.get('precision_binary', 0),
+            "train_recall_binary": train_metrics.get('recall_binary', 0),
+            "train_f1_binary": train_metrics.get('f1_binary', 0),
+            "train_roc_auc": train_metrics.get('roc_auc', 0),
+            # Test metrics (on adversarial data)
+            "test_accuracy": test_metrics['accuracy'],
+            "test_precision_binary": test_metrics.get('precision_binary', 0),
+            "test_recall_binary": test_metrics.get('recall_binary', 0),
+            "test_f1_binary": test_metrics.get('f1_binary', 0),
+            "test_roc_auc": test_metrics.get('roc_auc', 0),
+            # Accuracy drop
+            "accuracy_drop": train_metrics['accuracy'] - test_metrics['accuracy'],
+        }
+
+        # Add feature importance for tree-based models
+        if hasattr(model, 'feature_importances_'):
+            result_dict["feature_importance"] = {
+                name: value
+                for name, value in zip(
+                    predictor.feature_names,
+                    model.feature_importances_,
+                )
+                if value > 0
             }
-        )
+        else:
+            result_dict["feature_importance"] = "N/A (ensemble model)"
+
+        results_performance.append(result_dict)
 
     df_results = pd.DataFrame(results_performance)
     return df_results
@@ -258,11 +264,11 @@ def main():
     # Filter out base folder if requested (handles both /base/ and base_adv_*)
     if args.exclude_base:
         print("Excluding base folder from adversarial data...")
-        # Match both '/base/' in view path AND 'base_adv_*' in background column
-        base_mask = (
-            df_adversarial['view'].str.contains('/base/') |
-            df_adversarial['background'].str.contains(r'base_adv_')
-        )
+        # Match '/base/' in view path
+        base_mask = df_adversarial['view'].str.contains('/base/')
+        # Also check for 'background' column if it exists
+        if 'background' in df_adversarial.columns:
+            base_mask = base_mask | df_adversarial['background'].str.contains(r'base_adv_', na=False)
         df_adversarial = df_adversarial[~base_mask]
         print(f"  Remaining samples: {len(df_adversarial)}")
 
@@ -306,11 +312,23 @@ def main():
         print("="*70)
 
         # Show best results for each classifier
-        summary = df_combined.groupby('predictor').agg({
+        agg_dict = {
             'train_accuracy': 'max',
             'test_accuracy': 'max',
-            'accuracy_drop': 'min'  # Lower is better
-        }).round(4)
+            'accuracy_drop': 'min'  # Lower is better (smaller drop is better)
+        }
+
+        # Add optional metrics if they exist
+        if 'train_f1_binary' in df_combined.columns:
+            agg_dict['train_f1_binary'] = 'max'
+        if 'test_f1_binary' in df_combined.columns:
+            agg_dict['test_f1_binary'] = 'max'
+        if 'train_roc_auc' in df_combined.columns:
+            agg_dict['train_roc_auc'] = 'max'
+        if 'test_roc_auc' in df_combined.columns:
+            agg_dict['test_roc_auc'] = 'max'
+
+        summary = df_combined.groupby('predictor').agg(agg_dict).round(4)
         print(summary.to_string())
 
         print("\n" + "="*70)
