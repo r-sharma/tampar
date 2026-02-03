@@ -51,6 +51,26 @@ Usage:
         --attack all \
         --filter_folders carpet \
         --epsilon 0.05
+
+    # Texture only (no smoothness penalty) - Recommended for stronger attacks
+    python generate_adversarial_fields.py \
+        --data_dir /content/tampar/data/tampar_sample/validation \
+        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
+        --attack all \
+        --filter_folders carpet \
+        --epsilon 0.05 \
+        --texture_weight 1.0 \
+        --smoothness_weight 0.0
+
+    # Maximize roughness (negative smoothness)
+    python generate_adversarial_fields.py \
+        --data_dir /content/tampar/data/tampar_sample/validation \
+        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
+        --attack cw \
+        --filter_folders carpet \
+        --epsilon 0.05 \
+        --texture_weight 1.0 \
+        --smoothness_weight -1.0
 """
 
 import os
@@ -244,15 +264,16 @@ class AdversarialUVMapGenerator:
         return loss
 
     def generate_adversarial_uvmap(self, uvmap_path, attack_type='fgsm',
-                                   hallucination_strength=1.0, pgd_steps=10,
-                                   cw_steps=100, cw_c=1.0, cw_lr=0.01):
+                                   texture_weight=1.0, smoothness_weight=1.0,
+                                   pgd_steps=10, cw_steps=100, cw_c=1.0, cw_lr=0.01):
         """
         Generate adversarial version of UV map.
 
         Args:
             uvmap_path: Path to original UV map
             attack_type: 'fgsm', 'pgd', or 'cw'
-            hallucination_strength: Weight for hallucination losses
+            texture_weight: Weight for texture loss (high-freq artifacts). 0=disable, negative=reduce texture
+            smoothness_weight: Weight for smoothness loss. 0=disable, positive=smooth, negative=rough
             pgd_steps: Number of PGD steps if using PGD
             cw_steps: Number of C&W optimization steps
             cw_c: C&W regularization constant
@@ -273,9 +294,9 @@ class AdversarialUVMapGenerator:
             # FGSM: Single-step attack
             uvmap_tensor.requires_grad = True
 
-            # Combined loss: texture variation + smoothness violation
-            loss = (hallucination_strength * self.texture_loss(uvmap_tensor[0]) +
-                   hallucination_strength * self.smoothness_loss(uvmap_tensor[0]))
+            # Combined loss: texture variation + smoothness
+            loss = (texture_weight * self.texture_loss(uvmap_tensor[0]) +
+                   smoothness_weight * self.smoothness_loss(uvmap_tensor[0]))
 
             # Compute gradient
             loss.backward()
@@ -286,16 +307,16 @@ class AdversarialUVMapGenerator:
         elif attack_type == 'pgd':
             # PGD: Multi-step attack
             def loss_fn(img):
-                return (hallucination_strength * self.texture_loss(img) +
-                       hallucination_strength * self.smoothness_loss(img))
+                return (texture_weight * self.texture_loss(img) +
+                       smoothness_weight * self.smoothness_loss(img))
 
             adv_uvmap = self.pgd_attack(uvmap_tensor[0], loss_fn, steps=pgd_steps)
 
         elif attack_type == 'cw':
             # C&W: Optimization-based attack
             def loss_fn(img):
-                return (hallucination_strength * self.texture_loss(img) +
-                       hallucination_strength * self.smoothness_loss(img))
+                return (texture_weight * self.texture_loss(img) +
+                       smoothness_weight * self.smoothness_loss(img))
 
             adv_uvmap = self.cw_attack(uvmap_tensor[0], loss_fn, steps=cw_steps,
                                       c=cw_c, learning_rate=cw_lr)
@@ -312,8 +333,8 @@ class AdversarialUVMapGenerator:
 
 def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                                 uvmap_types=['gt', 'pred'], epsilon=0.05,
-                                hallucination_strength=2.0, pgd_steps=10,
-                                cw_steps=100, cw_c=1.0, cw_lr=0.01,
+                                texture_weight=1.0, smoothness_weight=1.0,
+                                pgd_steps=10, cw_steps=100, cw_c=1.0, cw_lr=0.01,
                                 filter_folders=None):
     """
     Generate adversarial UV maps directly.
@@ -324,7 +345,8 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
         attack_type: 'fgsm', 'pgd', 'cw', or 'all'
         uvmap_types: List of UV map types to perturb ('gt', 'pred', or both)
         epsilon: Perturbation magnitude
-        hallucination_strength: Strength of hallucination losses
+        texture_weight: Weight for texture loss (high-freq artifacts)
+        smoothness_weight: Weight for smoothness loss
         pgd_steps: Number of PGD iterations
         cw_steps: Number of C&W optimization steps
         cw_c: C&W regularization constant
@@ -343,7 +365,8 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     print(f"Attack type(s):   {attack_type}")
     print(f"UV map types:     {uvmap_types}")
     print(f"Epsilon:          {epsilon}")
-    print(f"Hallucination:    {hallucination_strength}")
+    print(f"Texture weight:   {texture_weight}")
+    print(f"Smoothness weight: {smoothness_weight}")
     if 'pgd' in attack_type.lower():
         print(f"PGD steps:        {pgd_steps}")
 
@@ -426,7 +449,8 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                     adv_uvmap = generator.generate_adversarial_uvmap(
                         uvmap_path,
                         attack_type=attack,
-                        hallucination_strength=hallucination_strength,
+                        texture_weight=texture_weight,
+                        smoothness_weight=smoothness_weight,
                         pgd_steps=pgd_steps,
                         cw_steps=cw_steps,
                         cw_c=cw_c,
@@ -487,9 +511,15 @@ def main():
                        help='Perturbation magnitude (L-inf norm). Higher = stronger attack. '
                             'Recommended: 0.03-0.1')
 
-    parser.add_argument('--hallucination_strength', type=float, default=2.0,
-                       help='Strength of hallucination losses. Higher = more artifacts. '
-                            'Recommended: 1.0-3.0')
+    parser.add_argument('--texture_weight', type=float, default=1.0,
+                       help='Weight for texture loss (maximizes high-frequency content). '
+                            '1.0=default, 0=disable, negative=reduce texture. '
+                            'Recommended: 0 (texture only), 1.0 (balanced), or 2.0 (more texture)')
+
+    parser.add_argument('--smoothness_weight', type=float, default=0.0,
+                       help='Weight for smoothness loss (minimizes curvature). '
+                            '0=disable (recommended), positive=smooth surfaces, negative=rough surfaces. '
+                            'Recommended: 0 (disable), 0.1 (slight smooth), or -1.0 (maximize roughness)')
 
     parser.add_argument('--pgd_steps', type=int, default=10,
                        help='Number of PGD iterations (only for PGD attack). '
@@ -519,7 +549,8 @@ def main():
         attack_type=args.attack,
         uvmap_types=args.uvmap_types,
         epsilon=args.epsilon,
-        hallucination_strength=args.hallucination_strength,
+        texture_weight=args.texture_weight,
+        smoothness_weight=args.smoothness_weight,
         pgd_steps=args.pgd_steps,
         cw_steps=args.cw_steps,
         cw_c=args.cw_c,
