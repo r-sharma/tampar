@@ -76,6 +76,7 @@ def train_predictor(
     validate: bool = True,
     gt_keypoints: bool = False,
     predictor_type: str = "simple_threshold",
+    test_split: float = 0.2,
 ) -> pd.DataFrame:
     SCORES = [n for n in df_final.columns if n.startswith("score")]
     data_train, data_test = get_data_splits(df_final, gt_keypoints=gt_keypoints)
@@ -109,47 +110,63 @@ def train_predictor(
             ) = predictor.validate_model(5)
             results_performance.append(
                 {
+                result_dict = {
                     "predictor": predictor_type,
                     "compare_types": ", ".join(compare_types),
                     "scores": ", ".join(
                         set(["_".join(s.split("_")[1:-1]) for s in scores])
                     ),
-                    "feature_importance": {
+                    **val_metrics_summary,
+                }
+                # Only add feature importance for tree-based models
+                if hasattr(models[0], 'feature_importances_'):
+                    result_dict["feature_importance"] = {
                         name: value
                         for name, value in zip(
                             predictor.feature_names,
                             models[0].feature_importances_,
                         )
                         if value > 0
-                    },
-                    **val_metrics_summary,
-                }
+                    }
+                else:
+                    result_dict["feature_importance"] = "N/A (ensemble model)"
+                results_performance.append(result_dict)
             )
         else:
-            predictor.test_split_size = 0
+            # Use train/test split
+            predictor.test_split_size = test_split
             model, train_metrics, test_metrics = predictor.train()
 
-            X_test = data_test[scores].to_numpy().astype(float)
-            y_test = data_test["tampered"].to_numpy().astype(int)
-            ids_test = data_test["id"].to_numpy()
-            test_metrics = evaluate(model, X_test, y_test)
+            # Only evaluate on separate test set if it exists
+            if len(data_test) > 0:
+                X_test = data_test[scores].to_numpy().astype(float)
+                y_test = data_test["tampered"].to_numpy().astype(int)
+                ids_test = data_test["id"].to_numpy()
+                test_metrics = evaluate(model, X_test, y_test)
+            # Otherwise test_metrics will come from train() split
             results_performance.append(
                 {
+                result_dict = {
                     "predictor": predictor_type,
                     "compare_types": ", ".join(compare_types),
                     "scores": ",".join(
                         set(["_".join(s.split("_")[1:-1]) for s in scores])
                     ),
-                    "feature_importance": {
+                    **test_metrics,
+                }
+                # Only add feature importance for tree-based models
+                if hasattr(model, 'feature_importances_'):
+                    result_dict["feature_importance"] = {
                         name: value
                         for name, value in zip(
                             predictor.feature_names,
                             model.feature_importances_,
                         )
                         if value > 0
-                    },
-                    **test_metrics,
-                }
+                    }
+                else:
+                    result_dict["feature_importance"] = "N/A (ensemble model)"
+                results_performance.append(result_dict)
             )
 
     df_results_ = pd.DataFrame(results_performance)
@@ -178,7 +195,13 @@ def main():
         '--no-validate',
         dest='validate',
         action='store_false',
-        help='Disable cross-validation, train on full dataset'
+        help='Disable cross-validation, use train/test split instead'
+    )
+    parser.add_argument(
+        '--test-split',
+        type=float,
+        default=0.2,
+        help='Test split ratio when not using cross-validation (default: 0.2 = 20%% test)'
     )
     parser.add_argument(
         '--gt_keypoints',
@@ -234,7 +257,8 @@ def main():
                 df_final,
                 validate=args.validate,
                 gt_keypoints=args.gt_keypoints,
-                predictor_type=predictor_type
+                predictor_type=predictor_type,
+                test_split=args.test_split
             )
             all_results.append(df_results)
         except Exception as e:
@@ -255,12 +279,20 @@ def main():
             print("CLASSIFIER COMPARISON SUMMARY")
             print("="*70)
             # Show best accuracy for each predictor
-            summary = df_combined.groupby('predictor').agg({
-                'accuracy': 'max',
-                'f1_score': 'max',
-                'precision': 'max',
-                'recall': 'max'
-            }).round(4)
+            # Use correct column names from evaluate.py
+            agg_dict = {'accuracy': 'max'}
+
+            # Check which metric columns exist
+            if 'f1_binary' in df_combined.columns:
+                agg_dict['f1_binary'] = 'max'
+            if 'precision_binary' in df_combined.columns:
+                agg_dict['precision_binary'] = 'max'
+            if 'recall_binary' in df_combined.columns:
+                agg_dict['recall_binary'] = 'max'
+            if 'roc_auc' in df_combined.columns:
+                agg_dict['roc_auc'] = 'max'
+
+            summary = df_combined.groupby('predictor').agg(agg_dict).round(4)
             print(summary.to_string())
             print("\n")
     else:
