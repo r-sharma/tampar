@@ -5,10 +5,27 @@ Evaluates tampering predictor robustness against adversarial attacks.
 Trains on clean validation data, tests on adversarial validation data.
 
 Usage:
+    # Compare all classifiers
     python src/tools/predict_tampering_adversarial_eval.py \
         --clean_csv /content/drive/MyDrive/TAMPAR_DATA/simscores_validation_clean.csv \
         --adversarial_csv /content/drive/MyDrive/TAMPAR_DATA/simscores_validation_adversarial.csv \
+        --predictor_type all \
         --output_csv adversarial_evaluation_results.csv
+
+    # Test specific classifier
+    python src/tools/predict_tampering_adversarial_eval.py \
+        --clean_csv /path/to/clean.csv \
+        --adversarial_csv /path/to/adversarial.csv \
+        --predictor_type xgboost \
+        --output_csv xgboost_adversarial_results.csv
+
+    # Exclude base folder (recommended)
+    python src/tools/predict_tampering_adversarial_eval.py \
+        --clean_csv /path/to/clean.csv \
+        --adversarial_csv /path/to/adversarial.csv \
+        --predictor_type all \
+        --exclude_base \
+        --output_csv results.csv
 """
 
 import sys
@@ -154,14 +171,18 @@ def train_and_evaluate_predictor(
                 "scores": ", ".join(
                     set(["_".join(s.split("_")[1:-1]) for s in scores])
                 ),
-                "feature_importance": {
-                    name: value
-                    for name, value in zip(
-                        predictor.feature_names,
-                        model.feature_importances_,
-                    )
-                    if value > 0
-                },
+                "feature_importance": (
+                    {
+                        name: value
+                        for name, value in zip(
+                            predictor.feature_names,
+                            model.feature_importances_,
+                        )
+                        if value > 0
+                    }
+                    if hasattr(model, 'feature_importances_')
+                    else "N/A (ensemble model)"
+                ),
                 "train_accuracy": train_metrics['accuracy'],
                 "train_precision": train_metrics['precision_binary'],
                 "train_recall": train_metrics['recall_binary'],
@@ -210,6 +231,13 @@ def main():
         action='store_true',
         help='Exclude base folder (noisy labels) from evaluation'
     )
+    parser.add_argument(
+        '--predictor_type',
+        type=str,
+        default='all',
+        choices=['simple_threshold', 'decision_tree', 'random_forest', 'xgboost', 'ensemble', 'all'],
+        help='Type of predictor to train. Use "all" to compare all classifiers (default: all)'
+    )
 
     args = parser.parse_args()
 
@@ -240,22 +268,59 @@ def main():
 
     df_test = create_pivot(df_adversarial)
 
-    print("\nTraining on clean, testing on adversarial...")
-    df_results = train_and_evaluate_predictor(
-        df_train,
-        df_test,
-        gt_keypoints=args.gt_keypoints
-    )
+    # Determine which predictors to run
+    if args.predictor_type == 'all':
+        predictor_types = ['simple_threshold', 'decision_tree', 'random_forest', 'xgboost', 'ensemble']
+    else:
+        predictor_types = [args.predictor_type]
 
-    print(f"\nSaving results to {args.output_csv}...")
-    df_results.to_csv(args.output_csv, index=False)
+    # Run each predictor and collect results
+    all_results = []
+    for predictor_type in predictor_types:
+        print(f"\n{'='*70}")
+        print(f"Training with predictor: {predictor_type.upper()}")
+        print(f"{'='*70}")
 
-    print("\n" + "="*60)
-    print("SUMMARY: Best performing methods")
-    print("="*60)
-    df_sorted = df_results.sort_values('test_accuracy', ascending=False)
-    print(df_sorted[['compare_types', 'train_accuracy', 'test_accuracy', 'accuracy_drop']].head(10))
-    print("\nDone!")
+        try:
+            df_results = train_and_evaluate_predictor(
+                df_train,
+                df_test,
+                gt_keypoints=args.gt_keypoints,
+                predictor_type=predictor_type
+            )
+            all_results.append(df_results)
+        except Exception as e:
+            print(f"Error with {predictor_type}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    # Combine all results
+    if len(all_results) > 0:
+        df_combined = pd.concat(all_results, ignore_index=True)
+        print(f"\nSaving results to {args.output_csv}...")
+        df_combined.to_csv(args.output_csv, index=False)
+
+        print("\n" + "="*70)
+        print("CLASSIFIER COMPARISON SUMMARY")
+        print("="*70)
+
+        # Show best results for each classifier
+        summary = df_combined.groupby('predictor').agg({
+            'train_accuracy': 'max',
+            'test_accuracy': 'max',
+            'accuracy_drop': 'min'  # Lower is better
+        }).round(4)
+        print(summary.to_string())
+
+        print("\n" + "="*70)
+        print("BEST PERFORMING METHODS (by test accuracy)")
+        print("="*70)
+        df_sorted = df_combined.sort_values('test_accuracy', ascending=False)
+        print(df_sorted[['predictor', 'compare_types', 'train_accuracy', 'test_accuracy', 'accuracy_drop']].head(10).to_string(index=False))
+        print("\nDone!")
+    else:
+        print("No results generated.")
 
 
 if __name__ == "__main__":
