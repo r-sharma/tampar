@@ -319,10 +319,16 @@ class SurfaceLevelPairCreator:
 
         # Load adversarial UV maps from separate path (if provided)
         if self.adversarial_root is not None:
-            # If adversarial_root already points to a split directory, use it directly
-            if self.adversarial_root.name == split:
+            # If adversarial_root already contains adversarial subfolders (like carpet_adv_fgsm),
+            # use it directly; otherwise append split name
+            # Check if any subdirectory has 'adv' in its name
+            has_adv_subdirs = any('adv' in d.name.lower() for d in self.adversarial_root.iterdir() if d.is_dir())
+
+            if has_adv_subdirs:
+                # Already points to the split directory with adversarial folders
                 adv_split_dir = self.adversarial_root
             else:
+                # Need to append split name
                 adv_split_dir = self.adversarial_root / split
 
             if adv_split_dir.exists():
