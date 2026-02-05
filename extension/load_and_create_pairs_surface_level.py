@@ -182,16 +182,18 @@ class AugmentationPipeline:
 class SurfaceLevelPairCreator:
     """Create surface-level contrastive pairs according to the strategy table."""
 
-    def __init__(self, data_root, tampering_csv_path=None, random_seed=42):
+    def __init__(self, data_root, adversarial_root=None, tampering_csv_path=None, random_seed=42):
         """
         Initialize pair creator.
 
         Args:
             data_root: Path to TAMPAR dataset
+            adversarial_root: Path to adversarial TAMPAR dataset (optional)
             tampering_csv_path: Path to tampering_mapping.csv
             random_seed: Random seed
         """
         self.data_root = Path(data_root)
+        self.adversarial_root = Path(adversarial_root) if adversarial_root else None
         self.uvmaps_dir = self.data_root / 'uvmaps'
 
         # Load tampering mapping
@@ -255,24 +257,37 @@ class SurfaceLevelPairCreator:
         if split_dir.exists():
             print(f"\nLoading {split} UV maps...")
 
-            # Find all UV map files (both _gt and _pred)
+            # Find all UV map files recursively (both _gt and _pred)
+            # Search in background subfolders (carpet, gravel, table, etc.)
             # This will match both normal and adversarial UV maps:
-            # - id_01_20230516_142710_uvmap_gt.png (normal)
-            # - id_01_20230516_142710_fgsm_uvmap_gt.png (adversarial)
-            # - id_01_20230516_142710_pgd_uvmap_pred.png (adversarial)
-            uv_files = list(split_dir.glob('id_*_uvmap_gt.png')) + \
-                      list(split_dir.glob('id_*_uvmap_pred.png'))
+            # - carpet/id_01_20230516_142710_uvmap_gt.png (normal)
+            # - carpet/id_01_20230516_142710_fgsm_uvmap_gt.png (adversarial)
+            # - table/id_01_20230516_142710_pgd_uvmap_pred.png (adversarial)
+            uv_files = list(split_dir.glob('**/id_*_uvmap_gt.png')) + \
+                      list(split_dir.glob('**/id_*_uvmap_pred.png'))
+
+            # Filter out base folder
+            uv_files_filtered = []
+            for uv_file in uv_files:
+                # Check if 'base' is in the path
+                if 'base' not in str(uv_file.relative_to(split_dir)).lower():
+                    uv_files_filtered.append(uv_file)
+                else:
+                    # Skip base folder files
+                    continue
+
+            print(f"  Found {len(uv_files)} UV maps total")
+            print(f"  Excluded {len(uv_files) - len(uv_files_filtered)} UV maps from 'base' folder")
+            print(f"  Processing {len(uv_files_filtered)} UV maps")
+
+            uv_files = uv_files_filtered
 
             for uv_file in tqdm(uv_files, desc=f"{split} UVs"):
-                # Parse: id_01_20230516_142710_uvmap_gt.png or
-                #        id_01_20230516_142710_fgsm_uvmap_gt.png
+                # Parse: id_01_20230516_142710_uvmap_gt.png
                 filename = uv_file.stem
                 parts = filename.split('_')
                 parcel_id = int(parts[1])
                 uv_type = 'gt' if 'uvmap_gt' in filename else 'pred'
-
-                # Detect if this is an adversarial UV map
-                is_adversarial = 'fgsm' in filename or 'pgd' in filename
 
                 # Load and extract surfaces
                 uv_map = Image.open(uv_file).convert('RGB')
@@ -286,10 +301,72 @@ class SurfaceLevelPairCreator:
                     'filename': uv_file.name,
                     'type': uv_type,
                     'path': uv_file,
-                    'is_adversarial': is_adversarial  # NEW: Flag adversarial UV maps
+                    'is_adversarial': False  # Clean data
                 })
 
             print(f"✓ Loaded UV maps for {len(data[split])} parcels in {split}")
+
+        # Load adversarial UV maps from separate path (if provided)
+        if self.adversarial_root is not None:
+            adv_split_dir = self.adversarial_root / split
+            if adv_split_dir.exists():
+                print(f"\nLoading ADVERSARIAL {split} UV maps...")
+
+                # Find all adversarial UV map files recursively
+                # Search in background subfolders (carpet_adv_fgsm, carpet_adv_pgd, etc.)
+                adv_uv_files = list(adv_split_dir.glob('**/id_*_uvmap_gt.png')) + \
+                              list(adv_split_dir.glob('**/id_*_uvmap_pred.png'))
+
+                # Filter out base_adv_* folders
+                adv_uv_files_filtered = []
+                for uv_file in adv_uv_files:
+                    # Check if 'base' is in the path
+                    if 'base' not in str(uv_file.relative_to(adv_split_dir)).lower():
+                        adv_uv_files_filtered.append(uv_file)
+                    else:
+                        # Skip base_adv_* folder files
+                        continue
+
+                print(f"  Found {len(adv_uv_files)} adversarial UV maps total")
+                print(f"  Excluded {len(adv_uv_files) - len(adv_uv_files_filtered)} UV maps from 'base_adv_*' folders")
+                print(f"  Processing {len(adv_uv_files_filtered)} adversarial UV maps")
+
+                adv_uv_files = adv_uv_files_filtered
+
+                for uv_file in tqdm(adv_uv_files, desc=f"Adversarial {split} UVs"):
+                    # Parse: id_01_20230516_142710_uvmap_gt.png
+                    filename = uv_file.stem
+                    parts = filename.split('_')
+                    parcel_id = int(parts[1])
+                    uv_type = 'gt' if 'uvmap_gt' in filename else 'pred'
+
+                    # Detect attack type from folder name
+                    folder_path = str(uv_file.relative_to(adv_split_dir))
+                    attack_type = None
+                    if 'fgsm' in folder_path.lower():
+                        attack_type = 'fgsm'
+                    elif 'pgd' in folder_path.lower():
+                        attack_type = 'pgd'
+                    elif 'cw' in folder_path.lower():
+                        attack_type = 'cw'
+
+                    # Load and extract surfaces
+                    uv_map = Image.open(uv_file).convert('RGB')
+                    surfaces = SurfaceExtractor.extract_surfaces(uv_map)
+
+                    if parcel_id not in data[split]:
+                        data[split][parcel_id] = []
+
+                    data[split][parcel_id].append({
+                        'surfaces': surfaces,
+                        'filename': uv_file.name,
+                        'type': uv_type,
+                        'path': uv_file,
+                        'is_adversarial': True,
+                        'attack_type': attack_type  # Store attack type
+                    })
+
+                print(f"✓ Loaded adversarial UV maps for {len([p for p in data[split].keys() if any(c.get('is_adversarial', False) for c in data[split][p])])} parcels")
 
         self.data = data
         return data
@@ -337,7 +414,7 @@ class SurfaceLevelPairCreator:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': cap['surfaces'][surf_name],
                         'label': 1,
                         'pair_type': 'reference_vs_pred',
@@ -376,7 +453,7 @@ class SurfaceLevelPairCreator:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': cap['surfaces'][surf_name],
                         'label': 1,
                         'pair_type': 'reference_vs_gt',
@@ -412,7 +489,7 @@ class SurfaceLevelPairCreator:
                     aug_surface = self.augmentor.augment(ref_surface)
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': aug_surface,
                         'label': 1,
                         'pair_type': 'reference_vs_augmented_reference',
@@ -475,7 +552,7 @@ class SurfaceLevelPairCreator:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': cap['surfaces'][surf_name],
                         'label': 0,
                         'pair_type': 'reference_vs_tampered_gt',
@@ -515,7 +592,7 @@ class SurfaceLevelPairCreator:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': cap['surfaces'][surf_name],
                         'label': 0,
                         'pair_type': 'reference_vs_tampered_pred',
@@ -531,40 +608,41 @@ class SurfaceLevelPairCreator:
 
         print(f"   Created {self.pair_stats['negative_ref_vs_tampered_pred']} pairs")
 
-        # Type 3: Any reference vs adversarial (clean surfaces)
-        print("\n3. Reference vs Adversarial (Clean Surfaces)...")
+        # Type 3: CLEAN reference vs adversarial (clean surfaces)
+        print("\n3. CLEAN Reference vs Adversarial (Clean Surfaces)...")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
 
-            # Get CLEAN surfaces
+            # Get CLEAN surfaces (both in reference AND in field)
             clean_surfaces = self.tampering_map.get_clean_surfaces(parcel_id)
 
             # Get adversarial captures
             adv_captures = [c for c in self.data[split][parcel_id] if c.get('is_adversarial', False)]
 
             for surf_name in clean_surfaces:
+                # IMPORTANT: Only use surfaces that are CLEAN (untampered)
                 if surf_name not in self.data['reference'][parcel_id]:
                     continue
 
                 ref_surface = self.data['reference'][parcel_id][surf_name]
 
-                # Pair with adversarial versions
+                # Pair with adversarial versions of CLEAN surfaces
                 for adv_cap in adv_captures:
                     if surf_name not in adv_cap['surfaces']:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': adv_cap['surfaces'][surf_name],
                         'label': 0,
-                        'pair_type': 'reference_vs_adversarial_clean',
+                        'pair_type': 'clean_reference_vs_adversarial_clean',
                         'parcel_id': parcel_id,
                         'surface_name': surf_name,
                         'metadata': {
                             'ref_file': f"id_{parcel_id:02d}_uvmap.png",
                             'adversarial_file': adv_cap['filename'],
-                            'attack_type': 'fgsm' if 'fgsm' in adv_cap['filename'] else 'pgd',
+                            'attack_type': adv_cap.get('attack_type', 'unknown'),
                             'surface_status': 'clean'
                         }
                     })
@@ -572,40 +650,41 @@ class SurfaceLevelPairCreator:
 
         print(f"   Created {self.pair_stats['negative_ref_vs_adv_clean']} pairs")
 
-        # Type 4: Any reference vs adversarial (tampered surfaces)
-        print("\n4. Reference vs Adversarial (Tampered Surfaces)...")
+        # Type 4: CLEAN reference vs adversarial (tampered surfaces)
+        print("\n4. CLEAN Reference vs Adversarial (Tampered Surfaces)...")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
 
-            # Get TAMPERED surfaces
+            # Get TAMPERED surfaces (tampered in field, but reference is always clean)
             tampered_surfaces = self.tampering_map.get_tampered_surfaces(parcel_id)
 
             # Get adversarial captures
             adv_captures = [c for c in self.data[split][parcel_id] if c.get('is_adversarial', False)]
 
             for surf_name in tampered_surfaces:
+                # IMPORTANT: Reference is CLEAN (untampered), but field surface is TAMPERED
                 if surf_name not in self.data['reference'][parcel_id]:
                     continue
 
                 ref_surface = self.data['reference'][parcel_id][surf_name]
 
-                # Pair with adversarial versions
+                # Pair with adversarial versions of TAMPERED field surfaces
                 for adv_cap in adv_captures:
                     if surf_name not in adv_cap['surfaces']:
                         continue
 
                     pairs.append({
-                        'surface1': ref_surface,
+                        'image1': ref_surface,
                         'surface2': adv_cap['surfaces'][surf_name],
                         'label': 0,
-                        'pair_type': 'reference_vs_adversarial_tampered',
+                        'pair_type': 'clean_reference_vs_adversarial_tampered',
                         'parcel_id': parcel_id,
                         'surface_name': surf_name,
                         'metadata': {
                             'ref_file': f"id_{parcel_id:02d}_uvmap.png",
                             'adversarial_file': adv_cap['filename'],
-                            'attack_type': 'fgsm' if 'fgsm' in adv_cap['filename'] else 'pgd',
+                            'attack_type': adv_cap.get('attack_type', 'unknown'),
                             'surface_status': 'tampered',
                             'tampering_type': self.tampering_map.get_tampering_code(parcel_id, surf_name)
                         }
@@ -614,58 +693,59 @@ class SurfaceLevelPairCreator:
 
         print(f"   Created {self.pair_stats['negative_ref_vs_adv_tampered']} pairs")
 
-        # Type 5: Different parcels - same surface type
-        print("\n5. Different Parcels - Same Surface Type...")
+        # Type 5: Different parcels - same surface type (DISABLED)
+        # print("\n5. Different Parcels - Same Surface Type...")
         diff_parcel_count = 0
 
-        # Use reference UV maps for different parcel pairs
-        ref_parcel_ids = list(self.data['reference'].keys())
-
-        if len(ref_parcel_ids) >= 2:
-            # Target number of pairs to balance dataset
-            target_pairs = max(
-                self.pair_stats.get('negative_ref_vs_tampered_gt', 0),
-                self.pair_stats.get('negative_ref_vs_tampered_pred', 0),
-                self.pair_stats.get('negative_ref_vs_adv_clean', 0),
-                self.pair_stats.get('negative_ref_vs_adv_tampered', 0),
-                100  # minimum
-            )
-
-            attempts = 0
-            max_attempts = target_pairs * 10
-
-            while diff_parcel_count < target_pairs and attempts < max_attempts:
-                attempts += 1
-
-                # Select two different parcels
-                p1, p2 = random.sample(ref_parcel_ids, 2)
-
-                # Select a common surface type
-                surf_types = ['top', 'left', 'center', 'right', 'bottom']
-                surf_name = random.choice(surf_types)
-
-                # Check if both parcels have this surface in reference
-                if surf_name in self.data['reference'][p1] and \
-                   surf_name in self.data['reference'][p2]:
-
-                    pairs.append({
-                        'surface1': self.data['reference'][p1][surf_name],
-                        'surface2': self.data['reference'][p2][surf_name],
-                        'label': 0,
-                        'pair_type': 'different_parcels_same_surface',
-                        'parcel_id': f"{p1}_vs_{p2}",
-                        'surface_name': surf_name,
-                        'metadata': {
-                            'parcel1': p1,
-                            'parcel2': p2,
-                            'file1': f"id_{p1:02d}_uvmap.png",
-                            'file2': f"id_{p2:02d}_uvmap.png"
-                        }
-                    })
-                    diff_parcel_count += 1
+        # DISABLED: This creates pairs from different parcels which may confuse the model
+        # # Use reference UV maps for different parcel pairs
+        # ref_parcel_ids = list(self.data['reference'].keys())
+        #
+        # if len(ref_parcel_ids) >= 2:
+        #     # Target number of pairs to balance dataset
+        #     target_pairs = max(
+        #         self.pair_stats.get('negative_ref_vs_tampered_gt', 0),
+        #         self.pair_stats.get('negative_ref_vs_tampered_pred', 0),
+        #         self.pair_stats.get('negative_ref_vs_adv_clean', 0),
+        #         self.pair_stats.get('negative_ref_vs_adv_tampered', 0),
+        #         100  # minimum
+        #     )
+        #
+        #     attempts = 0
+        #     max_attempts = target_pairs * 10
+        #
+        #     while diff_parcel_count < target_pairs and attempts < max_attempts:
+        #         attempts += 1
+        #
+        #         # Select two different parcels
+        #         p1, p2 = random.sample(ref_parcel_ids, 2)
+        #
+        #         # Select a common surface type
+        #         surf_types = ['top', 'left', 'center', 'right', 'bottom']
+        #         surf_name = random.choice(surf_types)
+        #
+        #         # Check if both parcels have this surface in reference
+        #         if surf_name in self.data['reference'][p1] and \
+        #            surf_name in self.data['reference'][p2]:
+        #
+        #             pairs.append({
+        #                 'image1': self.data['reference'][p1][surf_name],
+        #                 'surface2': self.data['reference'][p2][surf_name],
+        #                 'label': 0,
+        #                 'pair_type': 'different_parcels_same_surface',
+        #                 'parcel_id': f"{p1}_vs_{p2}",
+        #                 'surface_name': surf_name,
+        #                 'metadata': {
+        #                     'parcel1': p1,
+        #                     'parcel2': p2,
+        #                     'file1': f"id_{p1:02d}_uvmap.png",
+        #                     'file2': f"id_{p2:02d}_uvmap.png"
+        #                 }
+        #             })
+        #             diff_parcel_count += 1
 
         self.pair_stats['negative_diff_parcels'] = diff_parcel_count
-        print(f"   Created {diff_parcel_count} pairs")
+        # print(f"   Created {diff_parcel_count} pairs")  # Will always be 0 now
 
         self.negative_pairs = pairs
         print(f"\n✓ Total NEGATIVE pairs: {len(pairs)}")
@@ -794,7 +874,7 @@ class SurfaceLevelPairCreator:
 
         for idx, pair in enumerate(sample_pairs):
             # Surface 1
-            surf1 = pair['surface1']
+            surf1 = pair['image1']
             axes[idx, 0].imshow(surf1.astype(np.uint8))
 
             title1 = f"Surface 1 - {pair['surface_name']}\n"
@@ -900,7 +980,7 @@ class SurfaceLevelPairCreator:
 
             for idx, pair in enumerate(sample_pairs):
                 # Surface 1
-                axes[idx, 0].imshow(pair['surface1'].astype(np.uint8))
+                axes[idx, 0].imshow(pair['image1'].astype(np.uint8))
                 title1 = f"Parcel {pair['parcel_id']}\n{pair['surface_name']}"
                 axes[idx, 0].set_title(title1, fontsize=9)
                 axes[idx, 0].axis('off')
@@ -976,7 +1056,13 @@ def main():
         '--data_root',
         type=str,
         default=str(ROOT / 'data' / 'tampar_sample'),
-        help='Path to TAMPAR dataset'
+        help='Path to TAMPAR dataset (clean data)'
+    )
+    parser.add_argument(
+        '--adversarial_root',
+        type=str,
+        default=None,
+        help='Path to adversarial TAMPAR dataset (e.g., /path/to/tampar/adversarial_validation)'
     )
     parser.add_argument(
         '--split',
@@ -1012,7 +1098,10 @@ def main():
     args = parser.parse_args()
 
     # Initialize creator
-    creator = SurfaceLevelPairCreator(args.data_root)
+    creator = SurfaceLevelPairCreator(
+        data_root=args.data_root,
+        adversarial_root=args.adversarial_root
+    )
 
     # Load data
     creator.load_data(split=args.split)
