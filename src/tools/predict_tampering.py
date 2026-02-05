@@ -13,9 +13,18 @@ from src.tampering.predictor import TamperingClassificator
 SPLIT_STRING = "___"
 
 
-def load_results(path: Path) -> pd.DataFrame:
+def load_results(path: Path, exclude_base: bool = False) -> pd.DataFrame:
     df = pd.read_csv(path)
     df.reset_index(inplace=True)
+
+    # Filter out base/base_adv folders if requested
+    if exclude_base:
+        before_count = len(df)
+        # Check if 'view' column contains 'base' (case-insensitive)
+        df = df[~df['view'].str.contains('base', case=False, na=False)]
+        after_count = len(df)
+        print(f"Excluded base folder: {before_count - after_count} rows removed ({before_count} -> {after_count})")
+
     df["id"] = (
         df["view"]
         + SPLIT_STRING
@@ -216,6 +225,12 @@ def main():
         default='tampering_results.csv',
         help='Output CSV file for results (default: tampering_results.csv)'
     )
+    parser.add_argument(
+        '--exclude_base',
+        action='store_true',
+        default=False,
+        help='Exclude base and base_adv folders from analysis (default: False)'
+    )
 
     args = parser.parse_args()
 
@@ -230,7 +245,8 @@ def main():
         sys.exit(1)
 
     print(f"Loading SimScores from: {simscores_path}")
-    df = load_results(simscores_path)
+    print(f"Exclude base folder: {args.exclude_base}")
+    df = load_results(simscores_path, exclude_base=args.exclude_base)
     df_final = create_pivot(df)
 
     # Determine which predictors to run
