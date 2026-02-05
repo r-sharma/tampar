@@ -527,6 +527,53 @@ class SurfaceLevelPairCreator:
         self.pair_stats['positive_augmented'] = num_augmented
         print(f"   Created {num_augmented} pairs")
 
+        # Type 4: Clean reference vs adversarial clean surfaces
+        print("\n4. Clean Reference vs Adversarial Clean Surfaces...")
+        num_adv_clean = 0
+
+        for parcel_id in self.data[split].keys():
+            if parcel_id not in self.data['reference']:
+                continue
+
+            # Get CLEAN surfaces (both in reference AND in field)
+            clean_surfaces = self.tampering_map.get_clean_surfaces(parcel_id)
+
+            # Get adversarial captures
+            adv_captures = [c for c in self.data[split][parcel_id] if c.get('is_adversarial', False)]
+
+            for surf_name in clean_surfaces:
+                # IMPORTANT: Only use surfaces that are CLEAN (untampered)
+                if surf_name not in self.data['reference'][parcel_id]:
+                    continue
+
+                ref_surface = self.data['reference'][parcel_id][surf_name]
+
+                # Pair with adversarial versions of CLEAN surfaces
+                # These should be POSITIVE because they're the same clean surface
+                # just with adversarial perturbations - we want the model to be robust
+                for adv_cap in adv_captures:
+                    if surf_name not in adv_cap['surfaces']:
+                        continue
+
+                    pairs.append({
+                        'image1': ref_surface,
+                        'surface2': adv_cap['surfaces'][surf_name],
+                        'label': 1,  # POSITIVE - same clean surface despite adversarial noise
+                        'pair_type': 'clean_reference_vs_adversarial_clean',
+                        'parcel_id': parcel_id,
+                        'surface_name': surf_name,
+                        'metadata': {
+                            'ref_file': f"id_{parcel_id:02d}_uvmap.png",
+                            'adversarial_file': adv_cap['filename'],
+                            'attack_type': adv_cap.get('attack_type', 'unknown'),
+                            'surface_status': 'clean'
+                        }
+                    })
+                    num_adv_clean += 1
+
+        self.pair_stats['positive_adv_clean'] = num_adv_clean
+        print(f"   Created {num_adv_clean} pairs")
+
         self.positive_pairs = pairs
         print(f"\n✓ Total POSITIVE pairs: {len(pairs)}")
 
@@ -630,47 +677,12 @@ class SurfaceLevelPairCreator:
 
         print(f"   Created {self.pair_stats['negative_ref_vs_tampered_pred']} pairs")
 
-        # Type 3: CLEAN reference vs adversarial (clean surfaces)
-        print("\n3. CLEAN Reference vs Adversarial (Clean Surfaces)...")
-        for parcel_id in self.data[split].keys():
-            if parcel_id not in self.data['reference']:
-                continue
-
-            # Get CLEAN surfaces (both in reference AND in field)
-            clean_surfaces = self.tampering_map.get_clean_surfaces(parcel_id)
-
-            # Get adversarial captures
-            adv_captures = [c for c in self.data[split][parcel_id] if c.get('is_adversarial', False)]
-
-            for surf_name in clean_surfaces:
-                # IMPORTANT: Only use surfaces that are CLEAN (untampered)
-                if surf_name not in self.data['reference'][parcel_id]:
-                    continue
-
-                ref_surface = self.data['reference'][parcel_id][surf_name]
-
-                # Pair with adversarial versions of CLEAN surfaces
-                for adv_cap in adv_captures:
-                    if surf_name not in adv_cap['surfaces']:
-                        continue
-
-                    pairs.append({
-                        'image1': ref_surface,
-                        'surface2': adv_cap['surfaces'][surf_name],
-                        'label': 0,
-                        'pair_type': 'clean_reference_vs_adversarial_clean',
-                        'parcel_id': parcel_id,
-                        'surface_name': surf_name,
-                        'metadata': {
-                            'ref_file': f"id_{parcel_id:02d}_uvmap.png",
-                            'adversarial_file': adv_cap['filename'],
-                            'attack_type': adv_cap.get('attack_type', 'unknown'),
-                            'surface_status': 'clean'
-                        }
-                    })
-                    self.pair_stats['negative_ref_vs_adv_clean'] += 1
-
-        print(f"   Created {self.pair_stats['negative_ref_vs_adv_clean']} pairs")
+        # Type 3: CLEAN reference vs adversarial (clean surfaces) - MOVED TO POSITIVE PAIRS
+        print("\n3. CLEAN Reference vs Adversarial (Clean Surfaces) - MOVED TO POSITIVE")
+        print("   This pair type is now a POSITIVE pair (see positive pair type #4)")
+        print("   Reason: Same clean surface with adversarial noise should match")
+        self.pair_stats['negative_ref_vs_adv_clean'] = 0
+        print(f"   Created 0 pairs (moved to positive)")
 
         # Type 4: CLEAN reference vs adversarial (tampered surfaces)
         print("\n4. CLEAN Reference vs Adversarial (Tampered Surfaces)...")
@@ -784,13 +796,14 @@ class SurfaceLevelPairCreator:
         print(f"  Reference vs uvmap_pred (clean):     {self.pair_stats['positive_ref_vs_pred']:>6}")
         print(f"  Reference vs uvmap_gt (clean):       {self.pair_stats['positive_ref_vs_gt']:>6}")
         print(f"  Reference vs Augmented Reference:    {self.pair_stats['positive_augmented']:>6}")
+        print(f"  Reference vs Adversarial (clean):    {self.pair_stats.get('positive_adv_clean', 0):>6}")
         print(f"  {'─'*60}")
         print(f"  TOTAL POSITIVE:                      {len(self.positive_pairs):>6}")
 
         print("\n📊 NEGATIVE PAIRS:")
         print(f"  Reference vs Tampered uvmap_gt:      {self.pair_stats['negative_ref_vs_tampered_gt']:>6}")
         print(f"  Reference vs Tampered uvmap_pred:    {self.pair_stats['negative_ref_vs_tampered_pred']:>6}")
-        print(f"  Reference vs Adversarial (clean):    {self.pair_stats['negative_ref_vs_adv_clean']:>6}")
+        print(f"  Reference vs Adversarial (clean):    {self.pair_stats['negative_ref_vs_adv_clean']:>6} [MOVED TO POSITIVE]")
         print(f"  Reference vs Adversarial (tampered): {self.pair_stats['negative_ref_vs_adv_tampered']:>6}")
         print(f"  Different Parcels - Same Surface:    {self.pair_stats['negative_diff_parcels']:>6}")
         print(f"  {'─'*60}")
@@ -806,12 +819,13 @@ class SurfaceLevelPairCreator:
                 'reference_vs_pred': self.pair_stats['positive_ref_vs_pred'],
                 'reference_vs_gt': self.pair_stats['positive_ref_vs_gt'],
                 'reference_vs_augmented_reference': self.pair_stats['positive_augmented'],
+                'reference_vs_adversarial_clean': self.pair_stats.get('positive_adv_clean', 0),
                 'total': len(self.positive_pairs)
             },
             'negative': {
                 'reference_vs_tampered_gt': self.pair_stats['negative_ref_vs_tampered_gt'],
                 'reference_vs_tampered_pred': self.pair_stats['negative_ref_vs_tampered_pred'],
-                'reference_vs_adversarial_clean': self.pair_stats['negative_ref_vs_adv_clean'],
+                'reference_vs_adversarial_clean': self.pair_stats['negative_ref_vs_adv_clean'],  # Should be 0
                 'reference_vs_adversarial_tampered': self.pair_stats['negative_ref_vs_adv_tampered'],
                 'different_parcels_same_surface': self.pair_stats['negative_diff_parcels'],
                 'total': len(self.negative_pairs)
