@@ -194,7 +194,13 @@ class SurfaceLevelPairCreator:
         """
         self.data_root = Path(data_root)
         self.adversarial_root = Path(adversarial_root) if adversarial_root else None
-        self.uvmaps_dir = self.data_root / 'uvmaps'
+
+        # Check if data_root ends with a split name (validation/test)
+        # If so, get parent directory for uvmaps
+        if self.data_root.name in ['validation', 'test']:
+            self.uvmaps_dir = self.data_root.parent / 'uvmaps'
+        else:
+            self.uvmaps_dir = self.data_root / 'uvmaps'
 
         # Load tampering mapping
         if tampering_csv_path is None:
@@ -253,7 +259,12 @@ class SurfaceLevelPairCreator:
             print(f"✓ Loaded {len(data['reference'])} reference UV maps")
 
         # Load split UV maps
-        split_dir = self.data_root / split
+        # If data_root already points to a split directory, use it directly
+        if self.data_root.name == split:
+            split_dir = self.data_root
+        else:
+            split_dir = self.data_root / split
+
         if split_dir.exists():
             print(f"\nLoading {split} UV maps...")
 
@@ -308,7 +319,12 @@ class SurfaceLevelPairCreator:
 
         # Load adversarial UV maps from separate path (if provided)
         if self.adversarial_root is not None:
-            adv_split_dir = self.adversarial_root / split
+            # If adversarial_root already points to a split directory, use it directly
+            if self.adversarial_root.name == split:
+                adv_split_dir = self.adversarial_root
+            else:
+                adv_split_dir = self.adversarial_root / split
+
             if adv_split_dir.exists():
                 print(f"\nLoading ADVERSARIAL {split} UV maps...")
 
