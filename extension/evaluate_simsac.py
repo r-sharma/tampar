@@ -104,11 +104,16 @@ def load_model(checkpoint_path, device='cuda'):
 
     model = model.to(device)
     model.eval()
-    
+
     print(f"✓ Model loaded from epoch {checkpoint['epoch']}")
-    print(f"  Training loss: {checkpoint['history']['train_loss'][-1]:.4f}")
-    print(f"  Val loss: {checkpoint['history']['val_loss'][-1]:.4f}")
-    
+
+    # Print training history if available (fine-tuned models)
+    if 'history' in checkpoint:
+        print(f"  Training loss: {checkpoint['history']['train_loss'][-1]:.4f}")
+        print(f"  Val loss: {checkpoint['history']['val_loss'][-1]:.4f}")
+    else:
+        print(f"  Using pre-trained checkpoint (no training history)")
+
     return model, checkpoint
 
 
