@@ -33,7 +33,7 @@ TAMPERING_MAPPING = load_tampering_mapping()
 
 
 def compute_sidesurface_similarity_scores(
-    ref_image_path: Path, gt_uvmap: np.ndarray, parcel_id: int
+    ref_image_path: Path, gt_uvmap: np.ndarray, parcel_id: int, simsac_ckpt_path: str = None
 ):
     rel_path = ref_image_path.relative_to(IMAGE_ROOT)
     reference_image = cv2.imread(ref_image_path.as_posix())
@@ -47,6 +47,7 @@ def compute_sidesurface_similarity_scores(
             output_path=None,  # only if visualize False
             compare_type=compare_type,
             visualize=False,
+            simsac_ckpt_path=simsac_ckpt_path,
         )
         for sideface_name, scores in similarities.items():
             results.append(
@@ -66,7 +67,7 @@ def compute_sidesurface_similarity_scores(
     return results
 
 
-def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=True):
+def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=True, simsac_ckpt_path: str = None):
     parcel_results = []
     gt_uvmap_path = UVMAP_DIR / f"id_{str(parcel_id).zfill(2)}_uvmap.png"
     if not gt_uvmap_path.exists():
@@ -91,11 +92,12 @@ def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=
                         ref_image_path,
                         gt_uvmap,
                         parcel_id,
+                        simsac_ckpt_path,
                     )
                     futures.append(future)
                 else:
                     results = compute_sidesurface_similarity_scores(
-                        ref_image_path, gt_uvmap, parcel_id
+                        ref_image_path, gt_uvmap, parcel_id, simsac_ckpt_path
                     )
                     parcel_results.extend(results)
                     pbar.update(1)
@@ -109,7 +111,19 @@ def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=
     return parcel_results
 
 
-def main(parallel=False) -> pd.DataFrame:
+def main(parallel=False, simsac_ckpt_path: str = None) -> pd.DataFrame:
+    """
+    Compute similarity scores using SimSAC.
+
+    Args:
+        parallel: Use parallel processing
+        simsac_ckpt_path: Path to SimSAC checkpoint file (default: synthetic.pth)
+    """
+    if simsac_ckpt_path:
+        print(f"Using custom SimSAC checkpoint: {simsac_ckpt_path}")
+    else:
+        print("Using default SimSAC checkpoint: synthetic.pth")
+
     results = []
     for folder_name in ["validation"]:  # , "test"]:
         input_folder = IMAGE_ROOT / folder_name
@@ -117,7 +131,7 @@ def main(parallel=False) -> pd.DataFrame:
         output_path.mkdir(exist_ok=True, parents=True)
         for parcel_id in range(30):
             parcel_results = compute_parcel_similitary_scores(
-                parcel_id, input_folder, parallel=parallel
+                parcel_id, input_folder, parallel=parallel, simsac_ckpt_path=simsac_ckpt_path
             )
             if parcel_results is not None:
                 results.extend(parcel_results)
@@ -130,4 +144,23 @@ def main(parallel=False) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Compute similarity scores using SimSAC"
+    )
+    parser.add_argument(
+        '--checkpoint',
+        type=str,
+        default=None,
+        help='Path to SimSAC checkpoint file (e.g., phase2_best.pth). If not provided, uses default synthetic.pth'
+    )
+    parser.add_argument(
+        '--parallel',
+        action='store_true',
+        default=False,
+        help='Enable parallel processing'
+    )
+
+    args = parser.parse_args()
+    main(parallel=args.parallel, simsac_ckpt_path=args.checkpoint)

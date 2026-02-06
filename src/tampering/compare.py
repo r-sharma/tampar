@@ -103,10 +103,10 @@ class DexiNedInference:
 
 
 def apply_homogenization(
-    compare_type: str, input_patch1: np.ndarray, input_patch2: np.ndarray
+    compare_type: str, input_patch1: np.ndarray, input_patch2: np.ndarray, simsac_ckpt_path=None
 ):
     if compare_type == CompareType.SIMSAC:
-        patch1, patch2 = compare_simsac(input_patch1, input_patch2)
+        patch1, patch2 = compare_simsac(input_patch1, input_patch2, ckpt_path=simsac_ckpt_path)
     elif compare_type in CompareType.KORNIA():
         patch1, patch2 = compare_kornia(
             input_patch1, input_patch2, filter_name=compare_type
@@ -141,6 +141,7 @@ def compute_uvmap_similarity(
     output_path: Path,
     compare_type: str,
     visualize: bool = True,
+    simsac_ckpt_path: str = None,
 ):
     results = {}
     for i, (input_patch1, input_patch2) in enumerate(
@@ -149,7 +150,7 @@ def compute_uvmap_similarity(
         metrics = {}
         if np.mean(input_patch1) >= 250 or np.mean(input_patch2) >= 250:
             continue  # skip
-        patch1, patch2 = apply_homogenization(compare_type, input_patch1, input_patch2)
+        patch1, patch2 = apply_homogenization(compare_type, input_patch1, input_patch2, simsac_ckpt_path=simsac_ckpt_path)
 
         for metric in METRICS:
             compute_metric = globals()[f"compute_{metric}"]
@@ -188,8 +189,8 @@ def compute_uvmap_similarity(
     return results
 
 
-def compare_simsac(im1, im2, threshod=200, ckpt_name=""):
-    simsac = SimSaC.get_instance(ckpt_name)
+def compare_simsac(im1, im2, threshod=200, ckpt_name="", ckpt_path=None):
+    simsac = SimSaC.get_instance(ckpt_name=ckpt_name, ckpt_path=ckpt_path)
     imgs = simsac.inference(im1.astype(np.uint8), im2.astype(np.uint8))
     for i, img in enumerate(imgs):
         img = cv2.resize(img, (im1.shape[1], im1.shape[0]))
