@@ -289,7 +289,9 @@ class Trainer:
         print(f"  Checkpoint saved: {checkpoint_path}")
 
         if is_best:
-            best_path = output_dir / 'best_model.pth'
+            # Save with phase-specific name for clarity
+            phase = self.config.get('phase', 1)
+            best_path = output_dir / f'phase{phase}_best.pth'
             torch.save(checkpoint, best_path)
             print(f"  ✓ New best model saved: {best_path}")
     

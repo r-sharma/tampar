@@ -419,6 +419,7 @@ def main():
     print("SimSaC Contrastive Learning - Evaluation (Task 5.7)")
     print(f"{'='*70}")
     print(f"Checkpoint: {args.checkpoint}")
+    print(f"Threshold: {args.threshold}")
     print(f"Device: {device}")
 
     # Load model
