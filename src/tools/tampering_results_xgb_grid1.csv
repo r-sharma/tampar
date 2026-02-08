@@ -1,0 +1,6 @@
+,predictor,compare_types,scores,accuracy,precision_binary,recall_binary,f1_binary,roc_auc
+0,xgb_grid,plain,"cwssim, ssim, mae, msssim, hog",0.533333333,0.5,0.7,0.56,0.45
+1,xgb_grid,canny,"cwssim, ssim, mae, msssim, hog",0.733333333,0.766666667,0.9,0.786666667,0.6
+2,xgb_grid,laplacian,"cwssim, ssim, mae, msssim, hog",0.466666667,0.5,0.5,0.466666667,0.4
+3,xgb_grid,meanchannel,"cwssim, ssim, mae, msssim, hog",0.466666667,0.533333333,0.5,0.493333333,0.45
+4,xgb_grid,"plain, canny, laplacian, meanchannel","cwssim, ssim, mae, msssim, hog",0.533333333,0.7,0.7,0.626666667,0.65

@@ -1,0 +1,6 @@
+,predictor,compare_types,scores,accuracy,precision_binary,recall_binary,f1_binary,roc_auc
+0,ensemble,plain,"msssim, cwssim, ssim, mae, hog",1.0,1.0,1.0,1.0,1.0
+1,ensemble,canny,"msssim, cwssim, ssim, mae, hog",0.9777777777777779,1.0,0.96,0.9777777777777779,1.0
+2,ensemble,laplacian,"msssim, cwssim, ssim, mae, hog",0.95,1.0,0.9199999999999999,0.95,1.0
+3,ensemble,meanchannel,"msssim, cwssim, ssim, mae, hog",0.861111111111111,0.8539682539682539,1.0,0.9095238095238095,0.8
+4,ensemble,"plain, canny, laplacian, meanchannel","msssim, cwssim, ssim, mae, hog",0.9555555555555555,0.9428571428571428,1.0,0.9666666666666668,1.0

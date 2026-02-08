@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from glob import glob
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.append(ROOT.as_posix())
@@ -69,7 +70,13 @@ def train_predictor(
 ) -> pd.DataFrame:
     SCORES = [n for n in df_final.columns if n.startswith("score")]
     data_train, data_test = get_data_splits(df_final, gt_keypoints=gt_keypoints)
+    train_ids = set(data_train["id"])
+    test_ids = set(data_test["id"])
+    overlap_ids = train_ids.intersection(test_ids)
 
+    print(f"Train IDs: {len(train_ids)}")
+    print(f"Test IDs: {len(test_ids)}")
+    print(f"Overlapping IDs: {len(overlap_ids)}")
     results_performance = []
     for compare_types in [[t] for t in CompareType.SELECTION()] + [
         CompareType.SELECTION()
@@ -90,6 +97,17 @@ def train_predictor(
                 val_metrics_summary,
                 models,
             ) = predictor.validate_model(5)
+
+            feature_importance = {}
+            if hasattr(models[0], "feature_importances_"):
+                feature_importance = {
+                    name: value
+                    for name, value in zip(
+                        predictor.feature_names,
+                        models[0].feature_importances_,
+                    )
+                    if value > 0
+                }
             results_performance.append(
                 {
                     "predictor": predictor_type,
@@ -97,14 +115,6 @@ def train_predictor(
                     "scores": ", ".join(
                         set(["_".join(s.split("_")[1:-1]) for s in scores])
                     ),
-                    "feature_importance": {
-                        name: value
-                        for name, value in zip(
-                            predictor.feature_names,
-                            models[0].feature_importances_,
-                        )
-                        if value > 0
-                    },
                     **val_metrics_summary,
                 }
             )
@@ -123,14 +133,7 @@ def train_predictor(
                     "scores": ",".join(
                         set(["_".join(s.split("_")[1:-1]) for s in scores])
                     ),
-                    "feature_importance": {
-                        name: value
-                        for name, value in zip(
-                            predictor.feature_names,
-                            model.feature_importances_,
-                        )
-                        if value > 0
-                    },
+                    "feature_importance": feature_importance,
                     **test_metrics,
                 }
             )
@@ -140,10 +143,19 @@ def train_predictor(
 
 
 def main():
-    df = load_results(ROOT / "data" / "misc" / "simscores_validation.csv")
+    # df = load_results(ROOT / "data" / "misc" / "simscores_validation.csv")
+    validation_dir = ROOT / "data" / "misc"
+    csv_files = validation_dir.glob("*.csv")
+
+    df_list = [load_results(csv_file) for csv_file in csv_files]
+    df = pd.concat(df_list, ignore_index=True)
     df_final = create_pivot(df)
-    df_results = train_predictor(df_final, validate=True, gt_keypoints=False)
-    df_results.to_csv("tampering_results.csv")
+    model_name = "ensemble"
+    df_results = train_predictor(
+        df_final, validate=True, gt_keypoints=False, predictor_type=model_name
+    )
+
+    df_results.to_csv(f"tampering_results_{model_name}1.csv")
 
 
 if __name__ == "__main__":
