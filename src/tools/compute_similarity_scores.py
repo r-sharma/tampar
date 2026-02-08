@@ -17,7 +17,7 @@ from src.tampering.compare import CompareType, compute_uvmap_similarity
 IMAGE_ROOT = ROOT / "data" / "tampar_sample"
 UVMAP_DIR = IMAGE_ROOT / "uvmaps"
 OUT_IMAGES = ROOT / "out_imgs"
-NUM_WORKERS = 1
+NUM_WORKERS = 4  # Use 4 parallel workers for faster processing
 
 
 def load_tampering_mapping():
@@ -67,7 +67,7 @@ def compute_sidesurface_similarity_scores(
     return results
 
 
-def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=True, simsac_ckpt_path: str = None):
+def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=True, simsac_ckpt_path: str = None, num_workers: int = None):
     parcel_results = []
     gt_uvmap_path = UVMAP_DIR / f"id_{str(parcel_id).zfill(2)}_uvmap.png"
     if not gt_uvmap_path.exists():
@@ -83,8 +83,9 @@ def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=
         return None
     print(f"Parcel ID: {parcel_id} ({len(references_image_paths)})")
     futures = []
+    workers = num_workers if num_workers is not None else NUM_WORKERS
     with tqdm.tqdm(total=len(references_image_paths)) as pbar:
-        with ThreadPoolExecutor(max_workers=NUM_WORKERS) as tp_executor:
+        with ThreadPoolExecutor(max_workers=workers) as tp_executor:
             for ref_image_path in references_image_paths:
                 if parallel:
                     future = tp_executor.submit(
@@ -111,13 +112,14 @@ def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=
     return parcel_results
 
 
-def main(parallel=False, simsac_ckpt_path: str = None) -> pd.DataFrame:
+def main(parallel=False, simsac_ckpt_path: str = None, num_workers: int = None) -> pd.DataFrame:
     """
     Compute similarity scores using SimSAC.
 
     Args:
         parallel: Use parallel processing
         simsac_ckpt_path: Path to SimSAC checkpoint file (default: synthetic.pth)
+        num_workers: Number of parallel workers (default: 4)
     """
     if simsac_ckpt_path:
         print(f"Using custom SimSAC checkpoint: {simsac_ckpt_path}")
@@ -131,7 +133,7 @@ def main(parallel=False, simsac_ckpt_path: str = None) -> pd.DataFrame:
         output_path.mkdir(exist_ok=True, parents=True)
         for parcel_id in range(30):
             parcel_results = compute_parcel_similitary_scores(
-                parcel_id, input_folder, parallel=parallel, simsac_ckpt_path=simsac_ckpt_path
+                parcel_id, input_folder, parallel=parallel, simsac_ckpt_path=simsac_ckpt_path, num_workers=num_workers
             )
             if parcel_results is not None:
                 results.extend(parcel_results)
@@ -161,6 +163,12 @@ if __name__ == "__main__":
         default=False,
         help='Enable parallel processing'
     )
+    parser.add_argument(
+        '--num_workers',
+        type=int,
+        default=4,
+        help='Number of parallel workers (default: 4). More workers = faster but more memory'
+    )
 
     args = parser.parse_args()
-    main(parallel=args.parallel, simsac_ckpt_path=args.checkpoint)
+    main(parallel=args.parallel, simsac_ckpt_path=args.checkpoint, num_workers=args.num_workers)
