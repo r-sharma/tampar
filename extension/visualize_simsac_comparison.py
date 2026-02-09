@@ -12,9 +12,8 @@ Supported comparison methods:
 - laplacian: Laplacian edge detection
 
 For each parcel surface, it shows:
-- Original images (RGB)
-- Change maps (grayscale)
-- Thresholded change maps (binary black/white)
+- Original RGB images (Reference, Clean, Adversarial)
+- Change/edge maps (R, C, A) in grayscale
 
 Usage:
     python visualize_simsac_comparison.py \
@@ -50,6 +49,11 @@ def process_simsac_output(im1, im2, threshold=200):
 
     This replicates what compare_simsac() does in src/tampering/compare.py
 
+    Args:
+        im1: Reference image
+        im2: Comparison image (clean or adversarial)
+        threshold: Threshold for binary visualization (default 200, range 0-255)
+
     Returns:
         change1_raw: Raw change map 1 (grayscale 0-255)
         change1_thresh: Thresholded change map 1 (binary 0 or 255)
@@ -78,52 +82,56 @@ def process_canny_output(im1, im2, threshold=200):
     """
     Process two images through Canny edge detection.
 
+    Args:
+        im1: Reference image
+        im2: Comparison image (clean or adversarial)
+        threshold: Threshold for binary visualization (default 200, range 0-255)
+
     Returns:
-        change_raw: Raw change map (grayscale 0-255)
-        change_thresh: Thresholded change map (binary 0 or 255)
+        edges_gray: Edge map for im2 (grayscale 0-255)
+        edges_thresh: Thresholded edge map for im2 (binary 0 or 255)
     """
     # Use compare_canny from src/tampering/compare.py
     # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_canny(im1, im2)
 
-    # Convert RGB edge maps to grayscale
-    edges1_gray = cv2.cvtColor(edge_maps[0].astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    edges2_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
-
-    # Compute difference between edge maps (change detection)
-    change_raw = cv2.absdiff(edges1_gray, edges2_gray)
+    # We only need edges from im2 (the comparison image)
+    # Convert RGB edge map to grayscale
+    edges_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
 
     # Thresholded version
-    change_thresh = (change_raw > threshold).astype(np.float32) * 255
-    change_thresh = change_thresh.astype(np.uint8)
+    edges_thresh = (edges_gray > threshold).astype(np.float32) * 255
+    edges_thresh = edges_thresh.astype(np.uint8)
 
-    return change_raw, change_thresh
+    return edges_gray, edges_thresh
 
 
 def process_laplacian_output(im1, im2, threshold=200):
     """
     Process two images through Laplacian edge detection.
 
+    Args:
+        im1: Reference image
+        im2: Comparison image (clean or adversarial)
+        threshold: Threshold for binary visualization (default 200, range 0-255)
+
     Returns:
-        change_raw: Raw change map (grayscale 0-255)
-        change_thresh: Thresholded change map (binary 0 or 255)
+        edges_gray: Edge map for im2 (grayscale 0-255)
+        edges_thresh: Thresholded edge map for im2 (binary 0 or 255)
     """
     # Use compare_laplacian from src/tampering/compare.py
     # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_laplacian(im1, im2)
 
-    # Convert RGB edge maps to grayscale
-    edges1_gray = cv2.cvtColor(edge_maps[0].astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    edges2_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
-
-    # Compute difference between edge maps (change detection)
-    change_raw = cv2.absdiff(edges1_gray, edges2_gray)
+    # We only need edges from im2 (the comparison image)
+    # Convert RGB edge map to grayscale
+    edges_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
 
     # Thresholded version
-    change_thresh = (change_raw > threshold).astype(np.float32) * 255
-    change_thresh = change_thresh.astype(np.uint8)
+    edges_thresh = (edges_gray > threshold).astype(np.float32) * 255
+    edges_thresh = edges_thresh.astype(np.uint8)
 
-    return change_raw, change_thresh
+    return edges_gray, edges_thresh
 
 
 def visualize_parcel_comparison(
@@ -142,13 +150,12 @@ def visualize_parcel_comparison(
         clean_path: Path to clean field UV map
         adversarial_path: Path to adversarial field UV map
         output_path: Path to save output visualization
-        threshold: Threshold value for binary change map
+        threshold: Not used (kept for backward compatibility)
         method: Comparison method ('simsac', 'canny', or 'laplacian')
 
-    Shows 3 columns:
-    - Column 1: Reference vs Clean
-    - Column 2: Reference vs Adversarial
-    - Column 3: Difference (Adversarial - Clean)
+    Shows 6 columns for each surface:
+    - Columns 1-3: Original RGB images (Reference, Clean, Adversarial)
+    - Columns 4-6: Change/edge maps (R, C, A) - grayscale 0-255
 
     For each surface patch (top, left, center, right, bottom).
     """
@@ -171,8 +178,8 @@ def visualize_parcel_comparison(
     num_surfaces = len(ref_patches)
 
     # Create figure with GridSpec for better control
-    # Each surface gets 1 row with 9 columns
-    fig = plt.figure(figsize=(24, 3 * num_surfaces))
+    # Each surface gets 1 row with 6 columns (RGB images + change/edge maps)
+    fig = plt.figure(figsize=(18, 3 * num_surfaces))
 
     plot_idx = 0
     for surf_idx, (ref_patch, clean_patch, adv_patch) in enumerate(
@@ -197,82 +204,60 @@ def visualize_parcel_comparison(
         else:
             raise ValueError(f"Unknown method: {method}")
 
-        # Process through selected method
+        # Process through selected method (only need raw maps, ignore thresholded)
+        # Reference (using reference vs reference to get baseline)
+        change1_ref_raw, _ = process_func(
+            ref_patch, ref_patch, threshold
+        )
+
         # Reference vs Clean
-        change1_clean_raw, change1_clean_thresh = process_func(
+        change1_clean_raw, _ = process_func(
             ref_patch, clean_patch, threshold
         )
 
         # Reference vs Adversarial
-        change1_adv_raw, change1_adv_thresh = process_func(
+        change1_adv_raw, _ = process_func(
             ref_patch, adv_patch, threshold
         )
 
-        # Compute difference in raw change maps
-        change_diff = cv2.absdiff(change1_adv_raw, change1_clean_raw)
-
-        # Compute difference in thresholded maps
-        change_thresh_diff = cv2.absdiff(change1_adv_thresh, change1_clean_thresh)
-
-        # Create subplot for this surface (1 row, 9 columns)
-        # Row: Original images (3), Raw change maps (3), Thresholded maps (3)
-        base_idx = surf_idx * 9
+        # Create subplot for this surface (1 row, 6 columns)
+        # Columns: RGB Reference, RGB Clean, RGB Adversarial, Map(R), Map(C), Map(A)
+        base_idx = surf_idx * 6
 
         # Column 1: Reference image
-        plt.subplot(num_surfaces, 9, base_idx + 1)
+        plt.subplot(num_surfaces, 6, base_idx + 1)
         plt.imshow(ref_patch)
-        plt.title(f'{surface_name}\nReference', fontsize=9)
+        plt.title(f'{surface_name}\nReference', fontsize=10)
         plt.axis('off')
 
         # Column 2: Clean field
-        plt.subplot(num_surfaces, 9, base_idx + 2)
+        plt.subplot(num_surfaces, 6, base_idx + 2)
         plt.imshow(clean_patch)
-        plt.title('Clean', fontsize=9)
+        plt.title('Clean', fontsize=10)
         plt.axis('off')
 
         # Column 3: Adversarial field
-        plt.subplot(num_surfaces, 9, base_idx + 3)
+        plt.subplot(num_surfaces, 6, base_idx + 3)
         plt.imshow(adv_patch)
-        plt.title('Adversarial', fontsize=9)
+        plt.title('Adversarial', fontsize=10)
         plt.axis('off')
 
-        # Column 4: Raw change (Clean)
-        plt.subplot(num_surfaces, 9, base_idx + 4)
+        # Column 4: Change/Edge map (Reference)
+        plt.subplot(num_surfaces, 6, base_idx + 4)
+        plt.imshow(change1_ref_raw, cmap='gray', vmin=0, vmax=255)
+        plt.title(f'{method_label}(R)', fontsize=10)
+        plt.axis('off')
+
+        # Column 5: Change/Edge map (Clean)
+        plt.subplot(num_surfaces, 6, base_idx + 5)
         plt.imshow(change1_clean_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'{method_label}(C)\nRaw', fontsize=9)
+        plt.title(f'{method_label}(C)', fontsize=10)
         plt.axis('off')
 
-        # Column 5: Raw change (Adversarial)
-        plt.subplot(num_surfaces, 9, base_idx + 5)
+        # Column 6: Change/Edge map (Adversarial)
+        plt.subplot(num_surfaces, 6, base_idx + 6)
         plt.imshow(change1_adv_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'{method_label}(A)\nRaw', fontsize=9)
-        plt.axis('off')
-
-        # Column 6: Raw difference
-        plt.subplot(num_surfaces, 9, base_idx + 6)
-        plt.imshow(change_diff, cmap='hot', vmin=0, vmax=100)
-        plt.title(f'Diff\n[max={change_diff.max():.0f}]', fontsize=9)
-        plt.axis('off')
-
-        # Column 7: Thresholded change (Clean)
-        plt.subplot(num_surfaces, 9, base_idx + 7)
-        plt.imshow(change1_clean_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Thresh(C)\n@{threshold}', fontsize=9)
-        plt.axis('off')
-
-        # Column 8: Thresholded change (Adversarial)
-        plt.subplot(num_surfaces, 9, base_idx + 8)
-        plt.imshow(change1_adv_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Thresh(A)\n@{threshold}', fontsize=9)
-        plt.axis('off')
-
-        # Column 9: Threshold difference
-        plt.subplot(num_surfaces, 9, base_idx + 9)
-        plt.imshow(change_thresh_diff, cmap='gray', vmin=0, vmax=255)
-        pixels_changed = np.sum(change_thresh_diff > 0)
-        total_pixels = change_thresh_diff.size
-        pct_changed = 100 * pixels_changed / total_pixels
-        plt.title(f'Diff\n[{pct_changed:.1f}%]', fontsize=9)
+        plt.title(f'{method_label}(A)', fontsize=10)
         plt.axis('off')
 
     plt.tight_layout()
