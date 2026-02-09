@@ -83,13 +83,18 @@ def process_canny_output(im1, im2, threshold=200):
         change_thresh: Thresholded change map (binary 0 or 255)
     """
     # Use compare_canny from src/tampering/compare.py
-    change_map = compare_canny(im1, im2)
+    # Returns list of 2 RGB edge maps: [edges1, edges2]
+    edge_maps = compare_canny(im1, im2)
 
-    # change_map is already grayscale uint8
-    change_raw = change_map
+    # Convert RGB edge maps to grayscale
+    edges1_gray = cv2.cvtColor(edge_maps[0].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    edges2_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+
+    # Compute difference between edge maps (change detection)
+    change_raw = cv2.absdiff(edges1_gray, edges2_gray)
 
     # Thresholded version
-    change_thresh = (change_map > threshold).astype(np.float32) * 255
+    change_thresh = (change_raw > threshold).astype(np.float32) * 255
     change_thresh = change_thresh.astype(np.uint8)
 
     return change_raw, change_thresh
@@ -104,13 +109,18 @@ def process_laplacian_output(im1, im2, threshold=200):
         change_thresh: Thresholded change map (binary 0 or 255)
     """
     # Use compare_laplacian from src/tampering/compare.py
-    change_map = compare_laplacian(im1, im2)
+    # Returns list of 2 RGB edge maps: [edges1, edges2]
+    edge_maps = compare_laplacian(im1, im2)
 
-    # change_map is already grayscale uint8
-    change_raw = change_map
+    # Convert RGB edge maps to grayscale
+    edges1_gray = cv2.cvtColor(edge_maps[0].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    edges2_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
+
+    # Compute difference between edge maps (change detection)
+    change_raw = cv2.absdiff(edges1_gray, edges2_gray)
 
     # Thresholded version
-    change_thresh = (change_map > threshold).astype(np.float32) * 255
+    change_thresh = (change_raw > threshold).astype(np.float32) * 255
     change_thresh = change_thresh.astype(np.uint8)
 
     return change_raw, change_thresh
