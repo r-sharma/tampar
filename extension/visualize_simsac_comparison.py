@@ -43,7 +43,7 @@ from src.tampering.parcel import PATCH_ORDER
 from src.tampering.compare import compare_canny, compare_laplacian
 
 
-def process_simsac_output(im1, im2, threshold=200):
+def process_simsac_output(im1, im2, threshold=200, ckpt_path=None):
     """
     Process two images through SimSAC and return change maps.
 
@@ -53,12 +53,13 @@ def process_simsac_output(im1, im2, threshold=200):
         im1: Reference image
         im2: Comparison image (clean or adversarial)
         threshold: Threshold for binary visualization (default 200, range 0-255)
+        ckpt_path: Path to SimSAC checkpoint file (optional, uses default if None)
 
     Returns:
         change1_raw: Raw change map 1 (grayscale 0-255)
         change1_thresh: Thresholded change map 1 (binary 0 or 255)
     """
-    simsac = SimSaC.get_instance()
+    simsac = SimSaC.get_instance(ckpt_path=ckpt_path)
     imgs = simsac.inference(im1.astype(np.uint8), im2.astype(np.uint8))
 
     # Process change1 output
@@ -140,7 +141,8 @@ def visualize_parcel_comparison(
     adversarial_path,
     output_path,
     threshold=200,
-    method='simsac'
+    method='simsac',
+    simsac_ckpt_path=None
 ):
     """
     Visualize comparison for all surfaces of a parcel using specified method.
@@ -152,6 +154,7 @@ def visualize_parcel_comparison(
         output_path: Path to save output visualization
         threshold: Not used (kept for backward compatibility)
         method: Comparison method ('simsac', 'canny', or 'laplacian')
+        simsac_ckpt_path: Path to SimSAC checkpoint file (optional, only used with simsac method)
 
     Shows 6 columns for each surface:
     - Columns 1-3: Original RGB images (Reference, Clean, Adversarial)
@@ -206,19 +209,31 @@ def visualize_parcel_comparison(
 
         # Process through selected method (only need raw maps, ignore thresholded)
         # Reference (using reference vs reference to get baseline)
-        change1_ref_raw, _ = process_func(
-            ref_patch, ref_patch, threshold
-        )
-
-        # Reference vs Clean
-        change1_clean_raw, _ = process_func(
-            ref_patch, clean_patch, threshold
-        )
-
-        # Reference vs Adversarial
-        change1_adv_raw, _ = process_func(
-            ref_patch, adv_patch, threshold
-        )
+        if method == 'simsac':
+            change1_ref_raw, _ = process_func(
+                ref_patch, ref_patch, threshold, simsac_ckpt_path
+            )
+            # Reference vs Clean
+            change1_clean_raw, _ = process_func(
+                ref_patch, clean_patch, threshold, simsac_ckpt_path
+            )
+            # Reference vs Adversarial
+            change1_adv_raw, _ = process_func(
+                ref_patch, adv_patch, threshold, simsac_ckpt_path
+            )
+        else:
+            # For canny and laplacian (no checkpoint needed)
+            change1_ref_raw, _ = process_func(
+                ref_patch, ref_patch, threshold
+            )
+            # Reference vs Clean
+            change1_clean_raw, _ = process_func(
+                ref_patch, clean_patch, threshold
+            )
+            # Reference vs Adversarial
+            change1_adv_raw, _ = process_func(
+                ref_patch, adv_patch, threshold
+            )
 
         # Create subplot for this surface (1 row, 6 columns)
         # Columns: RGB Reference, RGB Clean, RGB Adversarial, Map(R), Map(C), Map(A)
@@ -292,6 +307,8 @@ def main():
     parser.add_argument('--method', type=str, default='simsac',
                        choices=['simsac', 'canny', 'laplacian'],
                        help='Comparison method to use (default: simsac)')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                       help='Path to SimSAC checkpoint file (optional, only used with simsac method)')
     parser.add_argument('--threshold', type=int, default=200,
                        help='Threshold value for binary change map (default: 200)')
 
@@ -361,6 +378,10 @@ def main():
     output_path = output_dir / output_name
 
     print(f"Method: {args.method}")
+    if args.checkpoint and args.method == 'simsac':
+        print(f"SimSAC Checkpoint: {args.checkpoint}")
+    elif args.checkpoint and args.method != 'simsac':
+        print(f"Warning: --checkpoint is only used with --method simsac, ignoring for {args.method}")
     print(f"Threshold: {args.threshold}")
 
     visualize_parcel_comparison(
@@ -369,7 +390,8 @@ def main():
         adversarial_path,
         output_path,
         threshold=args.threshold,
-        method=args.method
+        method=args.method,
+        simsac_ckpt_path=args.checkpoint
     )
 
 
