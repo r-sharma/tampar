@@ -1,15 +1,20 @@
 """
-Visualize how SimSAC sees clean vs adversarial UV maps.
+Visualize how different comparison methods see clean vs adversarial UV maps.
 
-This script shows the SimSAC change detection outputs for:
+This script shows the change detection outputs for:
 1. Reference UV map (from uvmaps folder)
 2. Clean field UV map (uvmap_gt)
 3. Adversarial field UV map (uvmap_gt with perturbations)
 
+Supported comparison methods:
+- simsac: SimSAC neural change detection
+- canny: Canny edge detection
+- laplacian: Laplacian edge detection
+
 For each parcel surface, it shows:
 - Original images (RGB)
-- SimSAC change maps (grayscale)
-- Thresholded change maps (binary black/white at threshold=200)
+- Change maps (grayscale)
+- Thresholded change maps (binary black/white)
 
 Usage:
     python visualize_simsac_comparison.py \
@@ -18,6 +23,7 @@ Usage:
         --adversarial_dir /path/to/adversarial_validation \
         --parcel_id 1 \
         --background carpet \
+        --method simsac \
         --output_dir /path/to/output
 """
 
@@ -35,6 +41,7 @@ from matplotlib.gridspec import GridSpec
 from src.simsac.inference import SimSaC
 from src.tampering.utils import get_side_surface_patches
 from src.tampering.parcel import PATCH_ORDER
+from src.tampering.compare import compare_canny, compare_laplacian
 
 
 def process_simsac_output(im1, im2, threshold=200):
@@ -45,31 +52,68 @@ def process_simsac_output(im1, im2, threshold=200):
 
     Returns:
         change1_raw: Raw change map 1 (grayscale 0-255)
-        change2_raw: Raw change map 2 (grayscale 0-255)
         change1_thresh: Thresholded change map 1 (binary 0 or 255)
-        change2_thresh: Thresholded change map 2 (binary 0 or 255)
     """
     simsac = SimSaC.get_instance()
     imgs = simsac.inference(im1.astype(np.uint8), im2.astype(np.uint8))
 
-    # Process each output (change1, change2, flow)
-    processed = []
-    for i, img in enumerate(imgs[:2]):  # Only process change1 and change2
-        img = cv2.resize(img, (im1.shape[1], im1.shape[0]))
-        # Convert to grayscale
-        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        img_gray = img_gray.astype(np.uint8)
+    # Process change1 output
+    img = imgs[0]
+    img = cv2.resize(img, (im1.shape[1], im1.shape[0]))
+    # Convert to grayscale
+    img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    img_gray = img_gray.astype(np.uint8)
 
-        # Raw change map
-        processed.append(img_gray)
+    # Raw change map
+    change1_raw = img_gray
 
-        # Thresholded version
-        img_thresh = (img_gray > threshold).astype(np.float32) * 255
-        img_thresh = img_thresh.astype(np.uint8)
-        processed.append(img_thresh)
+    # Thresholded version
+    img_thresh = (img_gray > threshold).astype(np.float32) * 255
+    change1_thresh = img_thresh.astype(np.uint8)
 
-    change1_raw, change1_thresh, change2_raw, change2_thresh = processed
-    return change1_raw, change1_thresh, change2_raw, change2_thresh
+    return change1_raw, change1_thresh
+
+
+def process_canny_output(im1, im2, threshold=200):
+    """
+    Process two images through Canny edge detection.
+
+    Returns:
+        change_raw: Raw change map (grayscale 0-255)
+        change_thresh: Thresholded change map (binary 0 or 255)
+    """
+    # Use compare_canny from src/tampering/compare.py
+    change_map = compare_canny(im1, im2)
+
+    # change_map is already grayscale uint8
+    change_raw = change_map
+
+    # Thresholded version
+    change_thresh = (change_map > threshold).astype(np.float32) * 255
+    change_thresh = change_thresh.astype(np.uint8)
+
+    return change_raw, change_thresh
+
+
+def process_laplacian_output(im1, im2, threshold=200):
+    """
+    Process two images through Laplacian edge detection.
+
+    Returns:
+        change_raw: Raw change map (grayscale 0-255)
+        change_thresh: Thresholded change map (binary 0 or 255)
+    """
+    # Use compare_laplacian from src/tampering/compare.py
+    change_map = compare_laplacian(im1, im2)
+
+    # change_map is already grayscale uint8
+    change_raw = change_map
+
+    # Thresholded version
+    change_thresh = (change_map > threshold).astype(np.float32) * 255
+    change_thresh = change_thresh.astype(np.uint8)
+
+    return change_raw, change_thresh
 
 
 def visualize_parcel_comparison(
@@ -77,10 +121,19 @@ def visualize_parcel_comparison(
     clean_path,
     adversarial_path,
     output_path,
-    threshold=200
+    threshold=200,
+    method='simsac'
 ):
     """
-    Visualize SimSAC comparison for all surfaces of a parcel.
+    Visualize comparison for all surfaces of a parcel using specified method.
+
+    Args:
+        reference_path: Path to reference UV map
+        clean_path: Path to clean field UV map
+        adversarial_path: Path to adversarial field UV map
+        output_path: Path to save output visualization
+        threshold: Threshold value for binary change map
+        method: Comparison method ('simsac', 'canny', or 'laplacian')
 
     Shows 3 columns:
     - Column 1: Reference vs Clean
@@ -121,14 +174,27 @@ def visualize_parcel_comparison(
         if np.mean(ref_patch) >= 250 or np.mean(clean_patch) >= 250:
             continue
 
-        # Process through SimSAC
+        # Select processing function based on method
+        if method == 'simsac':
+            process_func = process_simsac_output
+            method_label = 'SimSAC'
+        elif method == 'canny':
+            process_func = process_canny_output
+            method_label = 'Canny'
+        elif method == 'laplacian':
+            process_func = process_laplacian_output
+            method_label = 'Laplacian'
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        # Process through selected method
         # Reference vs Clean
-        change1_clean_raw, change1_clean_thresh, _, _ = process_simsac_output(
+        change1_clean_raw, change1_clean_thresh = process_func(
             ref_patch, clean_patch, threshold
         )
 
         # Reference vs Adversarial
-        change1_adv_raw, change1_adv_thresh, _, _ = process_simsac_output(
+        change1_adv_raw, change1_adv_thresh = process_func(
             ref_patch, adv_patch, threshold
         )
 
@@ -163,13 +229,13 @@ def visualize_parcel_comparison(
         # Column 4: Raw change (Clean)
         plt.subplot(num_surfaces, 9, base_idx + 4)
         plt.imshow(change1_clean_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Change(C)\nRaw', fontsize=9)
+        plt.title(f'{method_label}(C)\nRaw', fontsize=9)
         plt.axis('off')
 
         # Column 5: Raw change (Adversarial)
         plt.subplot(num_surfaces, 9, base_idx + 5)
         plt.imshow(change1_adv_raw, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Change(A)\nRaw', fontsize=9)
+        plt.title(f'{method_label}(A)\nRaw', fontsize=9)
         plt.axis('off')
 
         # Column 6: Raw difference
@@ -181,13 +247,13 @@ def visualize_parcel_comparison(
         # Column 7: Thresholded change (Clean)
         plt.subplot(num_surfaces, 9, base_idx + 7)
         plt.imshow(change1_clean_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Thresh(C)\n@200', fontsize=9)
+        plt.title(f'Thresh(C)\n@{threshold}', fontsize=9)
         plt.axis('off')
 
         # Column 8: Thresholded change (Adversarial)
         plt.subplot(num_surfaces, 9, base_idx + 8)
         plt.imshow(change1_adv_thresh, cmap='gray', vmin=0, vmax=255)
-        plt.title(f'Thresh(A)\n@200', fontsize=9)
+        plt.title(f'Thresh(A)\n@{threshold}', fontsize=9)
         plt.axis('off')
 
         # Column 9: Threshold difference
@@ -208,7 +274,7 @@ def visualize_parcel_comparison(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Visualize SimSAC change detection for clean vs adversarial UV maps"
+        description="Visualize change detection for clean vs adversarial UV maps"
     )
 
     parser.add_argument('--reference_dir', type=str, required=True,
@@ -228,8 +294,11 @@ def main():
                        help='Specific timestamp (optional, will use first match if not provided)')
     parser.add_argument('--output_dir', type=str, default='.',
                        help='Output directory for visualization')
+    parser.add_argument('--method', type=str, default='simsac',
+                       choices=['simsac', 'canny', 'laplacian'],
+                       help='Comparison method to use (default: simsac)')
     parser.add_argument('--threshold', type=int, default=200,
-                       help='SimSAC threshold value (default: 200)')
+                       help='Threshold value for binary change map (default: 200)')
 
     args = parser.parse_args()
 
@@ -293,15 +362,19 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_name = f"simsac_comparison_id{args.parcel_id}_{args.background}_{args.attack_type}.png"
+    output_name = f"{args.method}_comparison_id{args.parcel_id}_{args.background}_{args.attack_type}.png"
     output_path = output_dir / output_name
+
+    print(f"Method: {args.method}")
+    print(f"Threshold: {args.threshold}")
 
     visualize_parcel_comparison(
         reference_path,
         clean_path,
         adversarial_path,
         output_path,
-        threshold=args.threshold
+        threshold=args.threshold,
+        method=args.method
     )
 
 
