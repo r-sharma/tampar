@@ -26,7 +26,7 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -61,7 +61,9 @@ class Trainer:
             lambda_flow=config.get('lambda_flow', 0.0),
             lambda_change=config.get('lambda_change', 0.0),
             temperature=config['temperature'],
-            use_simplified=True  # Use simplified loss with explicit labels
+            use_simplified=True,  # Use simplified loss with explicit labels
+            use_weighted=config.get('use_weighted', False),
+            adversarial_weight=config.get('adversarial_weight', 3.0)
         )
         
         # Optimizer
@@ -71,11 +73,16 @@ class Trainer:
             weight_decay=config.get('weight_decay', 1e-4)
         )
         
-        # Learning rate scheduler
-        self.scheduler = CosineAnnealingLR(
+        # Learning rate scheduler - ReduceLROnPlateau (adaptive)
+        self.scheduler = ReduceLROnPlateau(
             self.optimizer,
-            T_max=config['epochs'],
-            eta_min=config.get('min_lr', 1e-6)
+            mode='min',              # Minimize validation loss
+            factor=0.5,              # Reduce LR by half when plateau
+            patience=3,              # Wait 3 epochs before reducing
+            verbose=True,            # Print LR changes
+            min_lr=1e-6,            # Minimum learning rate
+            threshold=0.01,          # Threshold for measuring improvement
+            threshold_mode='rel'     # Relative threshold
         )
         
         # Training history
@@ -100,17 +107,26 @@ class Trainer:
         
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Train]")
         
-        for batch_idx, (img1, img2, labels) in enumerate(pbar):
+        for batch_idx, batch_data in enumerate(pbar):
+            # Unpack batch (now includes is_adversarial)
+            if len(batch_data) == 4:
+                img1, img2, labels, is_adversarial = batch_data
+            else:
+                img1, img2, labels = batch_data
+                is_adversarial = None
+
             # Move to device
             img1 = img1.to(self.device)
             img2 = img2.to(self.device)
             labels = labels.to(self.device)
-            
+            if is_adversarial is not None:
+                is_adversarial = is_adversarial.to(self.device)
+
             # Forward pass
             z1, z2 = self.model(img1, img2)
-            
+
             # Compute loss
-            loss, loss_dict = self.criterion(z1, z2, labels=labels)
+            loss, loss_dict = self.criterion(z1, z2, labels=labels, is_adversarial=is_adversarial)
             
             # Backward pass
             self.optimizer.zero_grad()
@@ -157,17 +173,26 @@ class Trainer:
         pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1}/{self.config['epochs']} [Val]  ")
         
         with torch.no_grad():
-            for img1, img2, labels in pbar:
+            for batch_data in pbar:
+                # Unpack batch (now includes is_adversarial)
+                if len(batch_data) == 4:
+                    img1, img2, labels, is_adversarial = batch_data
+                else:
+                    img1, img2, labels = batch_data
+                    is_adversarial = None
+
                 # Move to device
                 img1 = img1.to(self.device)
                 img2 = img2.to(self.device)
                 labels = labels.to(self.device)
-                
+                if is_adversarial is not None:
+                    is_adversarial = is_adversarial.to(self.device)
+
                 # Forward pass
                 z1, z2 = self.model(img1, img2)
-                
+
                 # Compute loss
-                loss, loss_dict = self.criterion(z1, z2, labels=labels)
+                loss, loss_dict = self.criterion(z1, z2, labels=labels, is_adversarial=is_adversarial)
                 
                 # Update statistics
                 total_loss += loss.item()
@@ -208,9 +233,9 @@ class Trainer:
             
             # Validate
             val_loss, val_components = self.validate(epoch)
-            
-            # Update learning rate
-            self.scheduler.step()
+
+            # Update learning rate based on validation loss
+            self.scheduler.step(val_loss)
             current_lr = self.optimizer.param_groups[0]['lr']
             
             # Update history
@@ -380,7 +405,11 @@ def main():
                        help='Learning rate (default: 1e-3 for phase1, 1e-4 for phase2)')
     parser.add_argument('--temperature', type=float, default=0.07,
                        help='Temperature for contrastive loss')
-    
+    parser.add_argument('--use_weighted_loss', action='store_true',
+                       help='Use weighted loss for adversarial hard negatives')
+    parser.add_argument('--adversarial_weight', type=float, default=3.0,
+                       help='Weight multiplier for adversarial tampered pairs (default: 3.0)')
+
     # Resume training
     parser.add_argument('--checkpoint', type=str, default=None,
                        help='Checkpoint to resume from')
@@ -423,7 +452,9 @@ def main():
         'weight_decay': 1e-4,
         'min_lr': 1e-6,
         'gradient_clip': 1.0,
-        'save_every': 5
+        'save_every': 5,
+        'use_weighted': args.use_weighted_loss,
+        'adversarial_weight': args.adversarial_weight
     }
     
     print(f"\n{'='*70}")
@@ -505,8 +536,8 @@ def main():
     # Load checkpoint if resuming
     if args.checkpoint:
         trainer.load_checkpoint(args.checkpoint)
-        
-        # If phase 2, unfreeze backbone
+
+        # If phase 2, unfreeze backbone and reset scheduler
         if args.phase == 2:
             model.unfreeze_all()
             # Update optimizer with new parameters
@@ -515,6 +546,25 @@ def main():
                 lr=config['learning_rate'],
                 weight_decay=config.get('weight_decay', 1e-4)
             )
+            # Reset scheduler for Phase 2 (don't use Phase 1's state)
+            trainer.scheduler = ReduceLROnPlateau(
+                trainer.optimizer,
+                mode='min',
+                factor=0.5,
+                patience=3,
+                verbose=True,
+                min_lr=1e-6,
+                threshold=0.01,
+                threshold_mode='rel'
+            )
+            # Reset training history for Phase 2 to avoid combining with Phase 1
+            trainer.history = {
+                'train_loss': [],
+                'val_loss': [],
+                'learning_rate': []
+            }
+            trainer.start_epoch = 0  # Start from epoch 0 for Phase 2
+            print("✓ Scheduler and history reset for Phase 2")
     
     # Train
     trainer.train(output_dir=args.output_dir)

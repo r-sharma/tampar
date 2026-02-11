@@ -97,7 +97,19 @@ class ContrastivePairsDataset(Dataset):
 
         label = torch.tensor(pair['label'], dtype=torch.float32)
 
-        return img1, img2, label
+        # Check if this is an adversarial pair
+        # Look for 'adv' in image2_path or pair_type metadata
+        is_adversarial = False
+        if 'image2_path' in pair and isinstance(pair['image2_path'], str):
+            is_adversarial = 'adv' in pair['image2_path'].lower()
+        elif 'pair_type' in pair and isinstance(pair['pair_type'], str):
+            is_adversarial = 'adversarial' in pair['pair_type'].lower()
+        elif 'metadata' in pair and isinstance(pair['metadata'], dict):
+            is_adversarial = 'adv' in str(pair['metadata']).lower()
+
+        is_adversarial = torch.tensor(is_adversarial, dtype=torch.bool)
+
+        return img1, img2, label, is_adversarial
     
     def get_statistics(self):
         """Get dataset statistics."""

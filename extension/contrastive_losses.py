@@ -84,14 +84,14 @@ class NTXentLoss(nn.Module):
 class SimplifiedContrastiveLoss(nn.Module):
     """
     Simplified contrastive loss for positive/negative pairs.
-    
+
     This is easier to understand and works well when you have explicit labels.
     """
-    
+
     def __init__(self, temperature=0.07, margin=0.5):
         """
         Initialize simplified contrastive loss.
-        
+
         Args:
             temperature: Temperature for similarity scaling
             margin: Margin for negative pairs
@@ -99,38 +99,104 @@ class SimplifiedContrastiveLoss(nn.Module):
         super(SimplifiedContrastiveLoss, self).__init__()
         self.temperature = temperature
         self.margin = margin
-    
+
     def forward(self, z1, z2, labels):
         """
         Compute contrastive loss.
-        
+
         Args:
             z1: Features from image 1 [batch_size, dim]
             z2: Features from image 2 [batch_size, dim]
             labels: 1 for positive pairs, 0 for negative [batch_size]
-        
+
         Returns:
             loss: Scalar loss value
         """
         # Normalize features
         z1 = F.normalize(z1, dim=1)
         z2 = F.normalize(z2, dim=1)
-        
+
         # Compute cosine similarity
         similarity = F.cosine_similarity(z1, z2, dim=1)
-        
+
         # Scale by temperature
         similarity = similarity / self.temperature
-        
+
         # Compute loss
         # Positive pairs: maximize similarity (minimize -similarity)
         # Negative pairs: minimize similarity (add margin)
         pos_loss = -similarity  # Negative because we want to maximize
         neg_loss = torch.clamp(similarity - self.margin, min=0.0)
-        
+
         # Weighted by labels
         loss = labels * pos_loss + (1 - labels) * neg_loss
-        
+
+        return loss.mean()
+
+
+class WeightedContrastiveLoss(nn.Module):
+    """
+    Weighted contrastive loss with support for adversarial hard negatives.
+
+    Applies higher weight to adversarial tampered pairs (hard negatives)
+    to prevent the model from overgeneralizing adversarial patterns.
+    """
+
+    def __init__(self, temperature=0.07, margin=0.5, adversarial_weight=3.0):
+        """
+        Initialize weighted contrastive loss.
+
+        Args:
+            temperature: Temperature for similarity scaling
+            margin: Margin for negative pairs
+            adversarial_weight: Weight multiplier for adversarial tampered pairs (default: 3.0)
+        """
+        super(WeightedContrastiveLoss, self).__init__()
+        self.temperature = temperature
+        self.margin = margin
+        self.adversarial_weight = adversarial_weight
+
+    def forward(self, z1, z2, labels, is_adversarial=None):
+        """
+        Compute weighted contrastive loss.
+
+        Args:
+            z1: Features from image 1 [batch_size, dim]
+            z2: Features from image 2 [batch_size, dim]
+            labels: 1 for positive pairs, 0 for negative [batch_size]
+            is_adversarial: Boolean tensor indicating adversarial pairs [batch_size] (optional)
+
+        Returns:
+            loss: Scalar loss value
+        """
+        # Normalize features
+        z1 = F.normalize(z1, dim=1)
+        z2 = F.normalize(z2, dim=1)
+
+        # Compute cosine similarity
+        similarity = F.cosine_similarity(z1, z2, dim=1)
+
+        # Scale by temperature
+        similarity = similarity / self.temperature
+
+        # Compute loss components
+        # Positive pairs: maximize similarity (minimize -similarity)
+        # Negative pairs: minimize similarity (add margin)
+        pos_loss = -similarity  # Negative because we want to maximize
+        neg_loss = torch.clamp(similarity - self.margin, min=0.0)
+
+        # Weighted by labels
+        loss = labels * pos_loss + (1 - labels) * neg_loss
+
+        # Apply adversarial weighting if provided
+        if is_adversarial is not None:
+            # Higher weight for adversarial negative pairs (hard negatives)
+            weights = torch.ones_like(loss)
+            # Adversarial tampered pairs (negative + adversarial) get higher weight
+            adversarial_negatives = (~labels.bool()) & is_adversarial.bool()
+            weights[adversarial_negatives] = self.adversarial_weight
+            loss = loss * weights
+
         return loss.mean()
 
 
@@ -142,62 +208,75 @@ class CombinedLoss(nn.Module):
     """
     
     def __init__(self, lambda_contrastive=1.0, lambda_flow=0.5, lambda_change=0.5,
-                 temperature=0.07, use_simplified=False):
+                 temperature=0.07, use_simplified=False, use_weighted=False,
+                 adversarial_weight=3.0):
         """
         Initialize combined loss.
-        
+
         Args:
             lambda_contrastive: Weight for contrastive loss
             lambda_flow: Weight for flow loss (if available)
             lambda_change: Weight for change loss (if available)
             temperature: Temperature for contrastive loss
             use_simplified: Use simplified contrastive loss instead of NT-Xent
+            use_weighted: Use weighted loss for adversarial hard negatives
+            adversarial_weight: Weight multiplier for adversarial tampered pairs
         """
         super(CombinedLoss, self).__init__()
-        
+
         self.lambda_contrastive = lambda_contrastive
         self.lambda_flow = lambda_flow
         self.lambda_change = lambda_change
-        
+
         # Contrastive loss
-        if use_simplified:
+        if use_weighted:
+            self.contrastive_loss = WeightedContrastiveLoss(
+                temperature=temperature,
+                adversarial_weight=adversarial_weight
+            )
+        elif use_simplified:
             self.contrastive_loss = SimplifiedContrastiveLoss(temperature=temperature)
         else:
             self.contrastive_loss = NTXentLoss(temperature=temperature)
-        
+
         self.use_simplified = use_simplified
+        self.use_weighted = use_weighted
         
         # Optional losses (TAMPAR original)
         self.flow_loss = nn.L1Loss()  # For optical flow
         self.change_loss = nn.BCEWithLogitsLoss()  # For change detection
     
-    def forward(self, z1, z2, labels=None, flow_pred=None, flow_gt=None, 
-                change_pred=None, change_gt=None):
+    def forward(self, z1, z2, labels=None, is_adversarial=None, flow_pred=None,
+                flow_gt=None, change_pred=None, change_gt=None):
         """
         Compute combined loss.
-        
+
         Args:
             z1: Projected features from image 1
             z2: Projected features from image 2
-            labels: Pair labels (required for simplified loss)
+            labels: Pair labels (required for simplified/weighted loss)
+            is_adversarial: Boolean tensor for adversarial pairs (for weighted loss)
             flow_pred: Predicted flow (optional)
             flow_gt: Ground truth flow (optional)
             change_pred: Predicted change mask (optional)
             change_gt: Ground truth change mask (optional)
-        
+
         Returns:
             total_loss: Combined loss
             loss_dict: Dictionary with individual loss components
         """
         loss_dict = {}
-        
+
         # Contrastive loss
-        if self.use_simplified:
-            assert labels is not None, "Labels required for simplified contrastive loss"
-            loss_contrastive = self.contrastive_loss(z1, z2, labels)
+        if self.use_weighted or self.use_simplified:
+            assert labels is not None, "Labels required for simplified/weighted contrastive loss"
+            if self.use_weighted:
+                loss_contrastive = self.contrastive_loss(z1, z2, labels, is_adversarial)
+            else:
+                loss_contrastive = self.contrastive_loss(z1, z2, labels)
         else:
             loss_contrastive = self.contrastive_loss(z1, z2)
-        
+
         loss_dict['contrastive'] = loss_contrastive.item()
         total_loss = self.lambda_contrastive * loss_contrastive
         
