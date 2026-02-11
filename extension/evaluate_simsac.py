@@ -138,7 +138,13 @@ def extract_embeddings(model, dataloader, device='cuda'):
     
     model.eval()
     with torch.no_grad():
-        for img1, img2, labels in tqdm(dataloader, desc="Extracting"):
+        for batch_data in tqdm(dataloader, desc="Extracting"):
+            # Handle both 3-item and 4-item unpacking (with/without is_adversarial)
+            if len(batch_data) == 4:
+                img1, img2, labels, is_adversarial = batch_data
+            else:
+                img1, img2, labels = batch_data
+
             img1 = img1.to(device)
             img2 = img2.to(device)
             
