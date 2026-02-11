@@ -79,7 +79,6 @@ class Trainer:
             mode='min',              # Minimize validation loss
             factor=0.5,              # Reduce LR by half when plateau
             patience=3,              # Wait 3 epochs before reducing
-            verbose=True,            # Print LR changes
             min_lr=1e-6,            # Minimum learning rate
             threshold=0.01,          # Threshold for measuring improvement
             threshold_mode='rel'     # Relative threshold
@@ -552,7 +551,6 @@ def main():
                 mode='min',
                 factor=0.5,
                 patience=3,
-                verbose=True,
                 min_lr=1e-6,
                 threshold=0.01,
                 threshold_mode='rel'
