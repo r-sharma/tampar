@@ -80,12 +80,95 @@ def get_data_splits(df_input: pd.DataFrame, gt_keypoints: bool = False):
     return data_train, data_test
 
 
+def save_surface_predictions(
+    model,
+    df_data: pd.DataFrame,
+    scores: list,
+    predictor_type: str,
+    compare_types: list,
+    output_path: str,
+):
+    """
+    Save per-surface predictions to a CSV file.
+
+    Columns:
+        parcel_id    - extracted from the id string
+        surface      - top/left/center/right/bottom
+        view         - original image path
+        actual       - ground truth (0=clean, 1=tampered)
+        predicted    - model prediction (0=clean, 1=tampered)
+        confidence   - probability of being tampered (0-1)
+        correct      - whether prediction matched ground truth
+        tampering    - tampering type code (te, wh, le, etc.)
+        predictor    - predictor type used
+        compare_type - comparison method used
+    """
+    X = df_data[scores].to_numpy().astype(float)
+    y_true = df_data["tampered"].to_numpy().astype(int)
+    ids = df_data["id"].to_numpy()
+
+    # Predictions
+    y_pred = model.predict(X)
+
+    # Confidence (probability of tampered=1)
+    if hasattr(model, 'predict_proba'):
+        y_prob = model.predict_proba(X)[:, 1]
+    else:
+        y_prob = y_pred.astype(float)
+
+    # Parse id back into components: view___surface___gt_keypoints
+    views, surfaces, gt_kps = [], [], []
+    for id_str in ids:
+        parts = id_str.split(SPLIT_STRING)
+        views.append(parts[0] if len(parts) > 0 else '')
+        surfaces.append(parts[1] if len(parts) > 1 else '')
+        gt_kps.append(parts[2] if len(parts) > 2 else '')
+
+    # Extract parcel_id from view path (e.g. "validation/carpet/id_05_...png" -> 5)
+    parcel_ids = []
+    for v in views:
+        try:
+            # Find "id_XX" pattern in path
+            import re
+            match = re.search(r'id_(\d+)', v)
+            parcel_ids.append(int(match.group(1)) if match else -1)
+        except Exception:
+            parcel_ids.append(-1)
+
+    pred_df = pd.DataFrame({
+        'parcel_id':    parcel_ids,
+        'surface':      surfaces,
+        'view':         views,
+        'gt_keypoints': gt_kps,
+        'actual':       y_true,
+        'predicted':    y_pred,
+        'confidence':   y_prob.round(4),
+        'correct':      (y_true == y_pred),
+        'tampering':    df_data['tampering'].values if 'tampering' in df_data.columns else '',
+        'predictor':    predictor_type,
+        'compare_type': ', '.join(compare_types),
+    })
+
+    # Sort for readability
+    pred_df = pred_df.sort_values(['parcel_id', 'surface']).reset_index(drop=True)
+
+    pred_df.to_csv(output_path, index=False)
+    print(f"\n  Per-surface predictions saved to: {output_path}")
+    print(f"  Total surfaces : {len(pred_df)}")
+    print(f"  Correct        : {pred_df['correct'].sum()} ({pred_df['correct'].mean():.1%})")
+    print(f"  Tampered (act) : {pred_df['actual'].sum()}")
+    print(f"  Tampered (pred): {pred_df['predicted'].sum()}")
+    return pred_df
+
+
 def train_predictor(
     df_final: pd.DataFrame,
     validate: bool = True,
     gt_keypoints: bool = False,
     predictor_type: str = "simple_threshold",
     test_split: float = 0.2,
+    save_predictions: bool = False,
+    predictions_output: str = "surface_predictions.csv",
 ) -> pd.DataFrame:
     SCORES = [n for n in df_final.columns if n.startswith("score")]
     data_train, data_test = get_data_splits(df_final, gt_keypoints=gt_keypoints)
@@ -138,6 +221,16 @@ def train_predictor(
             else:
                 result_dict["feature_importance"] = "N/A (ensemble model)"
             results_performance.append(result_dict)
+
+            # Save per-surface predictions using last fold's model on all training data
+            if save_predictions:
+                pred_out = predictions_output.replace(
+                    '.csv', f'_{predictor_type}_{"_".join(compare_types)}.csv'
+                )
+                save_surface_predictions(
+                    models[-1], data_train, scores,
+                    predictor_type, compare_types, pred_out
+                )
         else:
             # Use train/test split
             predictor.test_split_size = test_split
@@ -171,6 +264,16 @@ def train_predictor(
             else:
                 result_dict["feature_importance"] = "N/A (ensemble model)"
             results_performance.append(result_dict)
+
+            # Save per-surface predictions on training data
+            if save_predictions:
+                pred_out = predictions_output.replace(
+                    '.csv', f'_{predictor_type}_{"_".join(compare_types)}.csv'
+                )
+                save_surface_predictions(
+                    model, data_train, scores,
+                    predictor_type, compare_types, pred_out
+                )
 
     df_results_ = pd.DataFrame(results_performance)
     return df_results_
@@ -231,6 +334,18 @@ def main():
         default=False,
         help='Exclude base and base_adv folders from analysis (default: False)'
     )
+    parser.add_argument(
+        '--save_predictions',
+        action='store_true',
+        default=False,
+        help='Save per-surface predictions CSV showing actual vs predicted for each surface'
+    )
+    parser.add_argument(
+        '--predictions_output',
+        type=str,
+        default='surface_predictions.csv',
+        help='Output CSV file for per-surface predictions (default: surface_predictions.csv)'
+    )
 
     args = parser.parse_args()
 
@@ -268,7 +383,9 @@ def main():
                 validate=args.validate,
                 gt_keypoints=args.gt_keypoints,
                 predictor_type=predictor_type,
-                test_split=args.test_split
+                test_split=args.test_split,
+                save_predictions=args.save_predictions,
+                predictions_output=args.predictions_output,
             )
             all_results.append(df_results)
         except Exception as e:
