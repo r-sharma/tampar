@@ -515,9 +515,9 @@ class ExplainabilityDashboard:
                           fontsize=9, color='#aaaaaa', fontweight='bold')
 
         # Horizontal line under header
-        ax_table.axhline(y=y_start - 0.04, xmin=0, xmax=1,
-                         color='#555555', linewidth=0.8,
-                         transform=ax_table.transAxes)
+        ax_table.plot([0, 1], [y_start - 0.04, y_start - 0.04],
+                      color='#555555', linewidth=0.8,
+                      transform=ax_table.transAxes, clip_on=False)
 
         for i, (sname, surface) in enumerate(surfaces.items()):
             y = y_start - (i + 1) * row_height - 0.04
