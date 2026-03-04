@@ -154,7 +154,7 @@ def simsac_change_loss(simsac_model, field_img, reference_img):
     if change is None:
         raise ValueError(f"SimSAC did not return change output. Got: {type(output)}")
 
-    change_magnitude = torch.sqrt(change[:, 0] ** 2 + change[:, 1] ** 2)
+    change_magnitude = torch.sqrt(change[:, 0] ** 2 + change[:, 1] ** 2 + 1e-8)
     return change_magnitude.mean()
 
 
@@ -307,10 +307,18 @@ class OnlineAttackGenerator:
         if self.attack_type == 'none':
             return None
 
-        # Temporarily set SimSAC to train mode for gradient flow
-        # (it may have been set to eval by the outer training loop)
         was_training = self.simsac.training
         self.simsac.train()
+
+        # Temporarily disable grad accumulation in backbone during attack.
+        # In Phase 2 (unfrozen backbone), each PGD backward() would otherwise
+        # accumulate backbone gradients meant for input perturbation — not model
+        # update — causing NaN when optimizer.step() applies them.
+        # Gradient still flows to the INPUT (field) because field.requires_grad=True.
+        saved_grad_states = {n: p.requires_grad
+                             for n, p in self.simsac.named_parameters()}
+        for p in self.simsac.parameters():
+            p.requires_grad_(False)
 
         try:
             if self.attack_type == 'fgsm':
@@ -320,7 +328,9 @@ class OnlineAttackGenerator:
             else:
                 adv = None
         finally:
-            # Restore original mode
+            # Restore backbone grad state and training mode
+            for name, p in self.simsac.named_parameters():
+                p.requires_grad_(saved_grad_states[name])
             if not was_training:
                 self.simsac.eval()
 
