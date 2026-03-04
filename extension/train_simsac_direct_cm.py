@@ -2,7 +2,8 @@
 SimSAC Direct Change Map Fine-tuning (Path C — No contrastive loss)
 
 Directly fine-tunes SimSAC's change map output on pre-generated adversarial
-UV maps. No projection head. No contrastive loss. No temperature.
+UV maps from contrastive_pairs_surface_wb_test. No projection head. No
+contrastive loss. No temperature.
 
 Key design decisions that make this reliable:
 
@@ -15,14 +16,16 @@ Key design decisions that make this reliable:
      Without it: clean accuracy drops (as seen in Phase 2 full fine-tune → 65%)
      With it:    clean accuracy stays close to 84% while adversarial improves
 
-  3. Mixed data per batch (clean + adversarial, configurable ratio)
-     Model sees both distributions every epoch →
-     cannot forget clean while learning adversarial robustness
+  3. Mixed data per batch (clean + adversarial together in the pkl)
+     The contrastive_pairs_surface_wb_test pkl already contains both clean and
+     adversarial pairs (adversarial_simsac_test_wb_ep_10). Model sees both
+     distributions every epoch → cannot forget clean while learning robustness.
 
   4. Very small learning rate (default 1e-5)
      Conservative backbone updates → stable training
 
   5. Per-epoch evaluation on BOTH clean and adversarial validation
+     val_loader is the mixed val pkl; evaluate_separation splits by is_adv flag.
      Best checkpoint selected by: 0.5 * clean_sep + 0.5 * adv_sep
      where sep = tampered_mean_cm - clean_mean_cm (higher = better)
 
@@ -34,32 +37,25 @@ Why this works against pre-generated PGD/FGSM attacks:
 
 Usage:
     python extension/train_simsac_direct_cm.py \\
-        --clean_pairs  /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_clean_only_test/train_pairs_surface_level.pkl \\
-        --val_pairs    /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_clean_only_test/val_pairs_surface_level.pkl \\
-        --adv_uvmap_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/adversarial_test \\
-        --attack pgd \\
+        --clean_pairs  /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/train_pairs_surface_level.pkl \\
+        --val_pairs    /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/val_pairs_surface_level.pkl \\
         --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
         --output_dir   /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_direct_cm \\
         --lr 1e-5 \\
         --lambda_reg 0.1 \\
-        --adv_ratio 0.5 \\
         --epochs 15
 """
 
 import sys
 import types
 import argparse
-import pickle
-import random
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from PIL import Image
+from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -69,6 +65,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'extension'))
 
 from src.simsac.models.our_models.SimSaC import SimSaC_Model
+from contrastive_dataset import ContrastivePairsDataset
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +96,8 @@ def get_change_magnitude(simsac, field_img, ref_img):
     Forward pass through SimSAC and return change magnitude per image.
 
     Args:
-        field_img: [B, C, H, W] in [0, 1]
-        ref_img:   [B, C, H, W] in [0, 1]
+        field_img: [B, C, H, W] in ImageNet-normalised range
+        ref_img:   [B, C, H, W] in ImageNet-normalised range
 
     Returns:
         change_mag: [B] per-image mean change magnitude
@@ -128,6 +125,7 @@ def get_change_magnitude(simsac, field_img, ref_img):
         if change is None:
             raise ValueError(f"SimSAC returned no change map. Got: {type(out)}")
 
+        # +1e-8 inside sqrt prevents NaN gradient when both channels are near 0
         mag = torch.sqrt(change[:, 0] ** 2 + change[:, 1] ** 2 + 1e-8).mean()
         mags.append(mag)
 
@@ -177,151 +175,6 @@ def l2_reg_loss(model, original_params):
 
 
 # ---------------------------------------------------------------------------
-# Dataset — loads clean pairs + finds adversarial counterparts
-# ---------------------------------------------------------------------------
-
-class DirectCMDataset(Dataset):
-    """
-    Loads (reference_uvmap, field_uvmap, label) triples.
-
-    For each clean pair in the pkl, optionally looks up the adversarial
-    counterpart by resolving the field path into adv_uvmap_dir.
-
-    Adversarial path resolution (tries in order):
-      1. adv_uvmap_dir / relative_field_path_with_attack_suffix
-      2. adv_uvmap_dir / relative_field_path (same filename, different root)
-    """
-
-    def __init__(self, pairs_pkl, adv_uvmap_dir=None, attack='pgd',
-                 adv_ratio=0.5, clean_root=None, target_size=(256, 256)):
-        """
-        Args:
-            pairs_pkl:    Path to train/val_pairs_surface_level.pkl
-            adv_uvmap_dir: Root dir of pre-generated adversarial UV maps.
-                           If None, only clean pairs are used.
-            attack:       'pgd' or 'fgsm' — suffix used in adversarial filenames
-            adv_ratio:    Fraction of adversarial samples per epoch (0.0–1.0)
-            clean_root:   Root dir of clean UV maps (auto-detected from pkl paths)
-            target_size:  Resize all images to this size
-        """
-        with open(pairs_pkl, 'rb') as f:
-            self.pairs = pickle.load(f)
-
-        self.adv_uvmap_dir = Path(adv_uvmap_dir) if adv_uvmap_dir else None
-        self.attack = attack
-        self.adv_ratio = adv_ratio if adv_uvmap_dir else 0.0
-        self.target_size = target_size
-
-        # Auto-detect clean_root from first pair's img1 path
-        if clean_root is None and len(self.pairs) > 0:
-            p = Path(self.pairs[0]['img1'])
-            # Walk up until we find a directory that contains 'id_XX_uvmap' files
-            for parent in p.parents:
-                if any(parent.glob('id_*_uvmap.png')):
-                    self.clean_root = parent
-                    break
-            else:
-                self.clean_root = p.parent.parent
-        else:
-            self.clean_root = Path(clean_root) if clean_root else None
-
-        self.transform = transforms.Compose([
-            transforms.Resize(target_size),
-            transforms.ToTensor(),
-        ])
-
-        # Pre-build adversarial path lookup
-        self._adv_cache = {}
-
-        n_adv = sum(1 for p in self.pairs
-                    if self._find_adv_path(p['img2']) is not None)
-        print(f"  Loaded {len(self.pairs)} pairs "
-              f"({sum(1 for p in self.pairs if p['label']==1)} tampered, "
-              f"{sum(1 for p in self.pairs if p['label']==0)} clean)")
-        if self.adv_uvmap_dir:
-            print(f"  Adversarial UV maps found for {n_adv}/{len(self.pairs)} pairs")
-            print(f"  Adversarial sampling ratio: {adv_ratio:.0%}")
-
-    def _find_adv_path(self, clean_field_path):
-        """Resolve clean field UV map path → adversarial version path."""
-        if self.adv_uvmap_dir is None:
-            return None
-
-        key = str(clean_field_path)
-        if key in self._adv_cache:
-            return self._adv_cache[key]
-
-        clean_p = Path(clean_field_path)
-
-        # Try to get relative path from clean_root
-        try:
-            if self.clean_root and str(clean_p).startswith(str(self.clean_root)):
-                rel = clean_p.relative_to(self.clean_root)
-            else:
-                # Use last 3 parts: background/filename
-                rel = Path(*clean_p.parts[-3:])
-        except Exception:
-            rel = Path(*clean_p.parts[-3:])
-
-        candidates = []
-
-        # Strategy 1: same relative path, different root
-        candidates.append(self.adv_uvmap_dir / rel)
-
-        # Strategy 2: add attack suffix to stem before extension
-        # e.g. id_01_..._uvmap_pred.png → id_01_..._pgd_uvmap_pred.png
-        stem = clean_p.stem
-        suffix = clean_p.suffix
-        adv_name = f"{stem}_{self.attack}{suffix}"
-        candidates.append(self.adv_uvmap_dir / rel.parent / adv_name)
-
-        # Strategy 3: replace stem part containing 'uvmap'
-        # e.g. ..._uvmap_pred.png → ..._pgd_uvmap_pred.png
-        if 'uvmap' in stem:
-            adv_name2 = stem.replace('uvmap', f'{self.attack}_uvmap') + suffix
-            candidates.append(self.adv_uvmap_dir / rel.parent / adv_name2)
-
-        for c in candidates:
-            if c.exists():
-                self._adv_cache[key] = c
-                return c
-
-        self._adv_cache[key] = None
-        return None
-
-    def _load_img(self, path):
-        img = Image.open(str(path)).convert('RGB')
-        return self.transform(img)   # [3, H, W] in [0, 1]
-
-    def __len__(self):
-        return len(self.pairs)
-
-    def __getitem__(self, idx):
-        pair = self.pairs[idx]
-        label = int(pair['label'])
-
-        img1 = self._load_img(pair['img1'])   # reference UV map
-
-        # Decide clean vs adversarial
-        use_adv = (self.adv_uvmap_dir is not None
-                   and random.random() < self.adv_ratio)
-
-        if use_adv:
-            adv_path = self._find_adv_path(pair['img2'])
-            if adv_path is not None:
-                img2 = self._load_img(adv_path)
-                is_adv = 1
-            else:
-                img2 = self._load_img(pair['img2'])
-                is_adv = 0
-        else:
-            img2 = self._load_img(pair['img2'])
-            is_adv = 0
-
-        return img1, img2, torch.tensor(label, dtype=torch.float32), is_adv
-
-
-# ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
 
@@ -331,6 +184,11 @@ class DirectCMTrainer:
 
     No contrastive loss. No projection head. No temperature.
     Pure change map supervision + L2 regularisation toward original weights.
+
+    val_loader should be the MIXED val pkl (contrastive_pairs_surface_wb_test)
+    which contains both clean and adversarial pairs. evaluate_separation splits
+    these by the is_adversarial flag so we track both clean_sep and adv_sep from
+    a single loader.
     """
 
     def __init__(self, simsac, original_params, train_loader, val_loader,
@@ -354,8 +212,8 @@ class DirectCMTrainer:
 
         self.history = {
             'train_cm_loss': [],
-            'val_clean_sep': [],     # tampered_mean_cm - clean_mean_cm on clean val
-            'val_adv_sep': [],       # same on adversarial val
+            'val_clean_sep': [],     # tampered_mean_cm - clean_mean_cm on non-adv pairs
+            'val_adv_sep': [],       # tampered_mean_cm - clean_mean_cm on adversarial pairs
             'val_combined': [],
             'learning_rate': []
         }
@@ -410,36 +268,50 @@ class DirectCMTrainer:
     @torch.no_grad()
     def evaluate_separation(self, loader):
         """
-        Compute change map separation on a dataloader.
+        Compute change map separation on a mixed dataloader, split by is_adv.
 
         Returns:
-            separation = mean_cm(tampered) - mean_cm(clean)
-            Higher is better.
+            (clean_sep, clean_t_mean, clean_c_mean): stats on non-adversarial pairs
+            (adv_sep, adv_t_mean, adv_c_mean):       stats on adversarial pairs
+
+        separation = mean_cm(tampered) - mean_cm(clean), higher is better.
+        If no adversarial pairs are found, adv stats fall back to clean stats.
         """
         self.simsac.eval()
-        tampered_cms, clean_cms = [], []
 
-        for img1, img2, labels, _ in loader:
+        # (is_adv=False/True, label=0/1) → list of magnitudes
+        cms = {(False, 0): [], (False, 1): [], (True, 0): [], (True, 1): []}
+
+        for img1, img2, labels, is_advs in loader:
             img1   = img1.to(self.device)
             img2   = img2.to(self.device)
             labels = labels.to(self.device)
 
-            # Temporarily allow forward pass (eval mode, no grad needed)
             mags = get_change_magnitude(self.simsac, img2, img1)
 
-            for mag, lbl in zip(mags, labels):
-                if lbl.item() == 1:
-                    tampered_cms.append(mag.item())
-                else:
-                    clean_cms.append(mag.item())
+            for mag, lbl, is_adv_flag in zip(mags, labels, is_advs):
+                key = (bool(is_adv_flag.item()), int(lbl.item()))
+                cms[key].append(mag.item())
 
-        if not tampered_cms or not clean_cms:
-            return 0.0, 0.0, 0.0
+        def compute_sep(tampered_list, clean_list):
+            if not tampered_list or not clean_list:
+                return 0.0, 0.0, 0.0
+            t = float(np.mean(tampered_list))
+            c = float(np.mean(clean_list))
+            return t - c, t, c
 
-        t_mean = np.mean(tampered_cms)
-        c_mean = np.mean(clean_cms)
-        sep    = t_mean - c_mean
-        return sep, t_mean, c_mean
+        clean_sep, clean_t, clean_c = compute_sep(cms[(False, 1)], cms[(False, 0)])
+        adv_sep,   adv_t,   adv_c   = compute_sep(cms[(True, 1)],  cms[(True, 0)])
+
+        # If no adversarial pairs in this split, report clean stats for both
+        if not cms[(True, 0)] and not cms[(True, 1)]:
+            adv_sep, adv_t, adv_c = clean_sep, clean_t, clean_c
+
+        n_clean_pairs = len(cms[(False, 0)]) + len(cms[(False, 1)])
+        n_adv_pairs   = len(cms[(True, 0)])  + len(cms[(True, 1)])
+        print(f"    [eval] clean pairs: {n_clean_pairs}  |  adv pairs: {n_adv_pairs}")
+
+        return (clean_sep, clean_t, clean_c), (adv_sep, adv_t, adv_c)
 
     def train(self, output_dir):
         output_dir = Path(output_dir)
@@ -451,7 +323,6 @@ class DirectCMTrainer:
         print(f"Epochs:      {self.config['epochs']}")
         print(f"LR:          {self.config['lr']}")
         print(f"Lambda reg:  {self.config['lambda_reg']}")
-        print(f"Adv ratio:   {self.config['adv_ratio']:.0%} of batches use adversarial UV maps")
         print(f"Output:      {output_dir}")
         print(f"{'='*65}")
 
@@ -460,15 +331,9 @@ class DirectCMTrainer:
             # Train
             train_loss = self.train_epoch(epoch)
 
-            # Evaluate on clean val
-            clean_sep, clean_t, clean_c = self.evaluate_separation(self.val_loader)
-
-            # Evaluate on adversarial val (if adv_val_loader provided)
-            adv_sep = clean_sep   # fallback: same as clean if no adv val
-            if hasattr(self, 'adv_val_loader') and self.adv_val_loader:
-                adv_sep, adv_t, adv_c = self.evaluate_separation(self.adv_val_loader)
-            else:
-                adv_t, adv_c = clean_t, clean_c
+            # Evaluate on mixed val (splits by is_adv internally)
+            (clean_sep, clean_t, clean_c), (adv_sep, adv_t, adv_c) = \
+                self.evaluate_separation(self.val_loader)
 
             combined = 0.5 * clean_sep + 0.5 * adv_sep
             self.scheduler.step(combined)
@@ -607,22 +472,16 @@ def main():
         epilog=__doc__
     )
 
-    # Data
+    # Data — both pkls come from contrastive_pairs_surface_wb_test
+    # which already contains mixed clean + adversarial (adversarial_simsac_test_wb_ep_10) pairs
     parser.add_argument('--clean_pairs', type=str, required=True,
-                        help='Path to train_pairs_surface_level.pkl (clean UV maps)')
+                        help='Path to train_pairs_surface_level.pkl '
+                             '(from contrastive_pairs_surface_wb_test — '
+                             'already contains both clean and adversarial pairs)')
     parser.add_argument('--val_pairs', type=str, required=True,
-                        help='Path to val_pairs_surface_level.pkl (clean UV maps)')
-    parser.add_argument('--adv_uvmap_dir', type=str, default=None,
-                        help='Root dir of pre-generated adversarial UV maps '
-                             '(mirrors clean structure). If None, train on clean only.')
-    parser.add_argument('--adv_val_dir', type=str, default=None,
-                        help='Root dir of adversarial UV maps for VALIDATION. '
-                             'If None, val_pairs are used with adv_uvmap_dir.')
-    parser.add_argument('--attack', type=str, default='pgd',
-                        choices=['pgd', 'fgsm', 'both'],
-                        help='Attack type suffix in adversarial filenames (default: pgd)')
-    parser.add_argument('--adv_ratio', type=float, default=0.5,
-                        help='Fraction of each batch using adversarial UV maps (default: 0.5)')
+                        help='Path to val_pairs_surface_level.pkl '
+                             '(from contrastive_pairs_surface_wb_test — '
+                             'already contains both clean and adversarial pairs)')
 
     # Model
     parser.add_argument('--weights_path', type=str,
@@ -633,13 +492,15 @@ def main():
     parser.add_argument('--epochs', type=int, default=15,
                         help='Number of epochs (default: 15)')
     parser.add_argument('--batch_size', type=int, default=8,
-                        help='Batch size (default: 8, smaller than contrastive due to SimSAC overhead)')
+                        help='Batch size (default: 8)')
     parser.add_argument('--lr', type=float, default=1e-5,
                         help='Learning rate (default: 1e-5, keep small to prevent forgetting)')
     parser.add_argument('--lambda_reg', type=float, default=0.1,
                         help='L2 regularisation weight toward original weights (default: 0.1). '
-                             'Increase if clean accuracy drops, decrease if adversarial improvement is slow.')
+                             'Increase if clean accuracy drops, decrease if adv improvement is slow.')
     parser.add_argument('--grad_clip', type=float, default=1.0)
+    parser.add_argument('--num_workers', type=int, default=2,
+                        help='DataLoader workers (default: 2)')
 
     # Output
     parser.add_argument('--output_dir', type=str, required=True,
@@ -657,13 +518,13 @@ def main():
     print(f"\n{'='*65}")
     print("SimSAC Direct Change Map Fine-tuning")
     print(f"{'='*65}")
-    print(f"Clean pairs:    {args.clean_pairs}")
+    print(f"Train pairs:    {args.clean_pairs}")
     print(f"Val pairs:      {args.val_pairs}")
-    print(f"Adv UV maps:    {args.adv_uvmap_dir or 'None (clean-only training)'}")
     print(f"Weights:        {args.weights_path}")
     print(f"LR:             {args.lr}  (keep low to prevent catastrophic forgetting)")
     print(f"Lambda reg:     {args.lambda_reg}  (L2 toward original weights)")
-    print(f"Adv ratio:      {args.adv_ratio:.0%}")
+    print(f"Note: pkls from contrastive_pairs_surface_wb_test already contain")
+    print(f"      both clean and adversarial (adversarial_simsac_test_wb_ep_10) pairs.")
 
     # Load SimSAC
     simsac = load_simsac(args.weights_path, device)
@@ -677,49 +538,40 @@ def main():
     print(f"  ✓ Original weights stored for L2 regularisation "
           f"({len(original_params)} parameter tensors)")
 
-    # Datasets
+    # Datasets — ContrastivePairsDataset handles:
+    #   - keys 'image1'/'surface1' and 'image2'/'surface2' (numpy arrays in pkl)
+    #   - numpy → PIL conversion
+    #   - ImageNet normalisation
+    #   - is_adversarial detection from image2_path / pair_type / metadata
     print(f"\nBuilding datasets...")
-    train_dataset = DirectCMDataset(
-        pairs_pkl=args.clean_pairs,
-        adv_uvmap_dir=args.adv_uvmap_dir,
-        attack=args.attack,
-        adv_ratio=args.adv_ratio
+    train_dataset = ContrastivePairsDataset(args.clean_pairs)
+    val_dataset   = ContrastivePairsDataset(args.val_pairs)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=(device == 'cuda')
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=(device == 'cuda')
     )
 
-    val_dataset = DirectCMDataset(
-        pairs_pkl=args.val_pairs,
-        adv_uvmap_dir=None,   # clean val — always evaluate on clean
-        adv_ratio=0.0
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                              shuffle=True,  num_workers=2, pin_memory=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size,
-                              shuffle=False, num_workers=2, pin_memory=True)
-
-    # Adversarial validation dataloader (val pairs but pointing to adv UV maps)
-    adv_val_loader = None
-    adv_val_dir = args.adv_val_dir or args.adv_uvmap_dir
-    if adv_val_dir:
-        adv_val_dataset = DirectCMDataset(
-            pairs_pkl=args.val_pairs,
-            adv_uvmap_dir=adv_val_dir,
-            attack=args.attack,
-            adv_ratio=1.0   # always use adversarial for adv val
-        )
-        adv_val_loader = DataLoader(adv_val_dataset, batch_size=args.batch_size,
-                                    shuffle=False, num_workers=2)
-        print(f"  Adversarial val: always using adversarial UV maps for evaluation")
+    print(f"  Train batches: {len(train_loader)}")
+    print(f"  Val batches:   {len(val_loader)}")
 
     # Config
     config = {
-        'epochs':     args.epochs,
-        'lr':         args.lr,
-        'lambda_reg': args.lambda_reg,
-        'grad_clip':  args.grad_clip,
-        'adv_ratio':  args.adv_ratio,
+        'epochs':       args.epochs,
+        'lr':           args.lr,
+        'lambda_reg':   args.lambda_reg,
+        'grad_clip':    args.grad_clip,
         'weights_path': args.weights_path,
-        'attack':     args.attack,
     }
 
     # Trainer
@@ -731,8 +583,6 @@ def main():
         config=config,
         device=device
     )
-    if adv_val_loader:
-        trainer.adv_val_loader = adv_val_loader
 
     # Train
     trainer.train(output_dir=args.output_dir)
