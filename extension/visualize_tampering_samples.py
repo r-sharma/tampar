@@ -242,22 +242,26 @@ def plot_metric_bar(ax, row, importances):
         val = float(row[metric])
         imp = importances.get(metric, 0.0)
 
+        # Clamp to [0, 1] for display (MAE can be > 1 in raw pixel units)
+        val_display = min(max(val, 0.0), 1.0)
+
         # Is this metric value consistent with the ground truth label?
         if METRIC_TAMPERED_IS_LOW[metric]:
             # Low = tampered signal
-            signal_match = (val < 0.5 and is_tampered) or (val >= 0.5 and not is_tampered)
+            signal_match = (val_display < 0.5 and is_tampered) or (val_display >= 0.5 and not is_tampered)
         else:
             # High = tampered signal (mae)
-            signal_match = (val >= 0.5 and is_tampered) or (val < 0.5 and not is_tampered)
+            signal_match = (val_display >= 0.5 and is_tampered) or (val_display < 0.5 and not is_tampered)
 
         bar_color = COLORS['tampered_bar'] if signal_match else COLORS['neutral_bar']
         alpha = 0.4 + 0.6 * imp   # brighter = more important feature
 
-        ax.barh(i, val, color=bar_color, alpha=alpha, height=0.6,
+        ax.barh(i, val_display, color=bar_color, alpha=alpha, height=0.6,
                 edgecolor='white', linewidth=0.5)
 
-        # Value label
-        ax.text(max(val + 0.02, 0.04), i, f'{val:.3f}',
+        # Value label — use clamped position to stay within axes bounds
+        text_x = min(val_display + 0.02, 1.10)
+        ax.text(text_x, i, f'{val:.3f}',
                 va='center', ha='left', fontsize=9, color='#333333',
                 fontweight='bold' if imp > 0.2 else 'normal')
 
