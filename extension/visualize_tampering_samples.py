@@ -325,94 +325,178 @@ def plot_probability_gauge(ax, prob, pred, ground_truth):
     ax.spines['left'].set_visible(False)
 
 
-def build_figure(selected, importances, output_path):
+def load_surface_images(row, data_dir):
+    """
+    Load reference (GT) and adversarial UV map images.
+
+    Reference  : data_dir / uvmaps / id_{parcel_id:02d}_uvmap.png
+    Adversarial: data_dir / row['view']  (full relative path stored in CSV)
+
+    Returns (ref_img, adv_img) as RGB numpy arrays, or None if not found.
+    """
+    import cv2 as _cv2
+    data_dir = Path(data_dir)
+    ref_img = adv_img = None
+
+    try:
+        parcel_id = int(row['parcel_id'])
+        gt_path = data_dir / 'uvmaps' / f'id_{parcel_id:02d}_uvmap.png'
+        img = _cv2.imread(str(gt_path))
+        if img is not None:
+            ref_img = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
+    except Exception:
+        pass
+
+    try:
+        adv_path = data_dir / str(row['view'])
+        img = _cv2.imread(str(adv_path))
+        if img is not None:
+            adv_img = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
+    except Exception:
+        pass
+
+    return ref_img, adv_img
+
+
+def _show_uv_image(ax, img, title, title_color, border_color, bg_color):
+    """Display a UV map image (or a placeholder) in an axes."""
+    ax.set_facecolor(bg_color)
+    if img is not None:
+        ax.imshow(img, aspect='auto')
+    else:
+        ax.text(0.5, 0.5, 'Image\nnot found', ha='center', va='center',
+                fontsize=9, color='#888888', transform=ax.transAxes,
+                style='italic')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title(title, fontsize=9, fontweight='bold',
+                 color=title_color, pad=4)
+    for spine in ax.spines.values():
+        spine.set_edgecolor(border_color)
+        spine.set_linewidth(2.0)
+
+
+def build_figure(selected, importances, output_path, data_dir=None):
     """
     Build a figure with one column per sample.
 
-    Each column has:
-      - Header: surface ID + ground truth + CORRECTLY DETECTED badge
-      - Middle: metric bar chart
-      - Bottom: probability gauge
+    Layout per column (left → right):
+      Header   : surface ID · ground-truth label · CORRECTLY DETECTED badge
+      Images   : Reference UV map  →  Adversarial UV map  (requires --data_dir)
+      Metrics  : SimSAC similarity bars
+      Gauge    : XGBoost tampering probability (spans full width)
     """
     n = len(selected)
-    fig = plt.figure(figsize=(6.5 * n, 9))
+    has_images = data_dir is not None
+
+    col_w = 11.0 if has_images else 7.0
+    fig = plt.figure(figsize=(col_w * n, 10))
     fig.patch.set_facecolor('#F8F9FA')
 
-    # Title
+    # Title — y=1.00 keeps it above the GridSpec top=0.91, no overlap
     fig.suptitle(
         'Tampering Detection — XGBoost on SimSAC Features\n'
         'Correctly Detected Samples (Adversarial Test Set)',
-        fontsize=15, fontweight='bold', color='#1A1A2E', y=0.98
+        fontsize=14, fontweight='bold', color='#1A1A2E', y=1.00,
     )
 
-    # Grid: 2 rows (metric bars, probability gauge) × n columns
-    outer_grid = fig.add_gridspec(
-        2, n,
-        hspace=0.45,
-        wspace=0.35,
-        top=0.88, bottom=0.08,
-        left=0.06, right=0.97,
-        height_ratios=[3, 1]
+    # Outer grid: n sample columns
+    outer = fig.add_gridspec(
+        1, n,
+        left=0.03, right=0.97,
+        top=0.91, bottom=0.07,
+        wspace=0.22,
     )
 
     for col_idx, (_, row) in enumerate(selected.iterrows()):
-        is_tampered  = bool(row['tampered'])
-        prob         = float(row['prob'])
-        surface_id   = str(row['surface_id'])
+        is_tampered = bool(row['tampered'])
+        prob        = float(row['prob'])
+        surface_id  = str(row['surface_id'])
 
-        # Panel background colour
-        bg_color = COLORS['tampered_bg'] if is_tampered else COLORS['clean_bg']
+        bg_color    = COLORS['tampered_bg']    if is_tampered else COLORS['clean_bg']
+        badge_color = COLORS['badge_tampered'] if is_tampered else COLORS['badge_clean']
 
-        # ---- Header box ----
-        ax_hdr = fig.add_axes([
-            0.06 + col_idx * (0.91 / n),
-            0.90,
-            0.88 / n,
-            0.06
-        ])
+        # Per-sample: 3 rows — header | content | gauge
+        inner = outer[col_idx].subgridspec(
+            3, 1,
+            height_ratios=[1.0, 5.5, 1.2],
+            hspace=0.18,
+        )
+
+        # ── Header ──────────────────────────────────────────────────────────
+        ax_hdr = fig.add_subplot(inner[0])
         ax_hdr.set_facecolor(bg_color)
-        for spine in ax_hdr.spines.values():
-            spine.set_edgecolor(COLORS['border_correct'])
-            spine.set_linewidth(2)
         ax_hdr.set_xticks([])
         ax_hdr.set_yticks([])
+        for spine in ax_hdr.spines.values():
+            spine.set_edgecolor(badge_color)
+            spine.set_linewidth(2)
 
+        short_id   = (surface_id[:55] + '…') if len(surface_id) > 55 else surface_id
         gt_label   = 'TAMPERED' if is_tampered else 'CLEAN'
-        gt_color   = COLORS['badge_tampered'] if is_tampered else COLORS['badge_clean']
         pred_label = 'TAMPERED' if row['pred'] else 'CLEAN'
+        badge_text = '✓ TAMPERING\n  DETECTED' if is_tampered else '✓ NO TAMPERING\n  DETECTED'
 
-        # Surface ID (shortened if too long)
-        short_id = (surface_id[:40] + '…') if len(surface_id) > 40 else surface_id
-        ax_hdr.text(0.5, 0.80, short_id,
+        ax_hdr.text(0.5, 0.76, short_id,
                     ha='center', va='center', fontsize=9,
                     color='#333333', transform=ax_hdr.transAxes)
-        ax_hdr.text(0.5, 0.35,
+        ax_hdr.text(0.5, 0.26,
                     f'Ground Truth: {gt_label}   |   Predicted: {pred_label}',
                     ha='center', va='center', fontsize=9, fontweight='bold',
-                    color=gt_color, transform=ax_hdr.transAxes)
-
-        # CORRECTLY DETECTED badge (top-right corner)
-        badge_color = COLORS['badge_tampered'] if is_tampered else COLORS['badge_clean']
-        badge_text  = ('✓ TAMPERING\n  DETECTED'
-                       if is_tampered else '✓ NO TAMPERING\n  DETECTED')
-        ax_hdr.text(0.97, 0.85, badge_text,
+                    color=badge_color, transform=ax_hdr.transAxes)
+        ax_hdr.text(0.98, 0.88, badge_text,
                     ha='right', va='top', fontsize=8, fontweight='bold',
                     color='white', transform=ax_hdr.transAxes,
                     bbox=dict(boxstyle='round,pad=0.3',
                               facecolor=badge_color, alpha=0.9))
 
-        # ---- Metric bars ----
-        ax_metrics = fig.add_subplot(outer_grid[0, col_idx])
+        # ── Content row ──────────────────────────────────────────────────────
+        if has_images:
+            # 4 sub-columns: ref image | arrow | adv image | metric bars
+            content = inner[1].subgridspec(
+                1, 4,
+                width_ratios=[2.2, 0.28, 2.2, 3.5],
+                wspace=0.08,
+            )
+            ax_ref     = fig.add_subplot(content[0, 0])
+            ax_arr     = fig.add_subplot(content[0, 1])
+            ax_adv     = fig.add_subplot(content[0, 2])
+            ax_metrics = fig.add_subplot(content[0, 3])
+
+            ref_img, adv_img = load_surface_images(row, data_dir)
+
+            _show_uv_image(ax_ref, ref_img,
+                           title='Reference (GT)',
+                           title_color='#2471A3',
+                           border_color='#2471A3',
+                           bg_color='#EBF5FB')
+
+            # Arrow axes — just an arrow annotation, no frame
+            ax_arr.axis('off')
+            ax_arr.annotate(
+                '', xy=(0.90, 0.5), xytext=(0.10, 0.5),
+                xycoords='axes fraction', textcoords='axes fraction',
+                arrowprops=dict(arrowstyle='->', color='#555555',
+                                lw=2.0, mutation_scale=18),
+            )
+
+            adv_title = f"Adversarial ({'TAMPERED' if is_tampered else 'CLEAN'})"
+            _show_uv_image(ax_adv, adv_img,
+                           title=adv_title,
+                           title_color=badge_color,
+                           border_color=badge_color,
+                           bg_color=bg_color)
+        else:
+            ax_metrics = fig.add_subplot(inner[1])
+
         ax_metrics.set_facecolor(bg_color)
         plot_metric_bar(ax_metrics, row, importances)
-
-        # Add thin border
         for spine in ax_metrics.spines.values():
             spine.set_edgecolor('#CCCCCC')
             spine.set_linewidth(0.8)
 
-        # ---- Probability gauge ----
-        ax_gauge = fig.add_subplot(outer_grid[1, col_idx])
+        # ── Gauge ────────────────────────────────────────────────────────────
+        ax_gauge = fig.add_subplot(inner[2])
         ax_gauge.set_facecolor(bg_color)
         plot_probability_gauge(ax_gauge, prob, row['pred'], is_tampered)
         for spine in ax_gauge.spines.values():
@@ -431,9 +515,9 @@ def build_figure(selected, importances, output_path):
     fig.legend(handles=legend_handles,
                loc='lower center', ncol=3,
                fontsize=8.5, framealpha=0.9,
-               bbox_to_anchor=(0.5, 0.01))
+               bbox_to_anchor=(0.5, 0.0))
 
-    plt.savefig(output_path, dpi=180, bbox_inches='tight',
+    plt.savefig(output_path, dpi=150, bbox_inches='tight',
                 facecolor=fig.get_facecolor())
     print(f"\n✓ Figure saved → {output_path}")
     return fig
@@ -458,6 +542,10 @@ def main():
                         help='Number of correctly detected tampered samples (default: 2)')
     parser.add_argument('--n_clean', type=int, default=1,
                         help='Number of correctly detected clean samples (default: 1)')
+    parser.add_argument('--data_dir', default=None,
+                        help='Root data directory (tampar_sample/) containing uvmaps/ '
+                             'and the view paths from the CSV. '
+                             'If omitted, surface images are not shown.')
 
     args = parser.parse_args()
 
@@ -475,7 +563,8 @@ def main():
                               n_clean=args.n_clean)
 
     # 4. Plot
-    build_figure(selected, importances, output_path=args.output)
+    build_figure(selected, importances, output_path=args.output,
+                 data_dir=args.data_dir)
 
 
 if __name__ == '__main__':
