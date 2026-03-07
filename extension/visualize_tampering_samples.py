@@ -100,6 +100,40 @@ def load_simsac_features(csv_path):
 
 
 # ---------------------------------------------------------------------------
+# Metric thresholds
+# ---------------------------------------------------------------------------
+
+def compute_metric_thresholds(df):
+    """
+    Compute per-metric thresholds from the dataset for bar coloring.
+
+    Uses the median of each class separately:
+      - similarity metrics (METRIC_TAMPERED_IS_LOW=True):
+          threshold = median of tampered samples
+          (below threshold → tampered signal → orange)
+      - error metrics (METRIC_TAMPERED_IS_LOW=False):
+          threshold = median of clean samples
+          (above threshold → tampered signal → orange)
+
+    Falls back to overall median if a class has no samples.
+    """
+    thresholds = {}
+    for m in METRICS:
+        if METRIC_TAMPERED_IS_LOW[m]:
+            # Low value = tampered: use median of tampered class as the boundary
+            pool = df[df['tampered'] == 1][m].dropna()
+        else:
+            # High value = tampered: use median of clean class as the boundary
+            pool = df[df['tampered'] == 0][m].dropna()
+        thresholds[m] = float(pool.median()) if len(pool) else float(df[m].median())
+
+    print("\nMetric thresholds (data-driven):")
+    for m, t in thresholds.items():
+        print(f"  {METRIC_LABELS[m]:10s}: {t:.4f}")
+    return thresholds
+
+
+# ---------------------------------------------------------------------------
 # XGBoost training
 # ---------------------------------------------------------------------------
 
@@ -265,21 +299,24 @@ def _show_patch(ax, img, title, title_color, border_color, bg_color):
 # Metric bars + probability gauge
 # ---------------------------------------------------------------------------
 
-def plot_metric_bar(ax, row, importances, show_title=True, show_xlabel=True):
-    is_tampered = bool(row['tampered'])
+def plot_metric_bar(ax, row, importances, metric_thresholds=None,
+                    show_title=True, show_xlabel=True):
     y_pos = np.arange(len(METRICS))
 
     for i, metric in enumerate(METRICS):
         val         = float(row[metric])
         imp         = importances.get(metric, 0.0)
-        val_display = min(max(val, 0.0), 1.0)   # clamp — MAE can be >1
+        val_display = min(max(val, 0.0), 1.0)   # clamp for bar display
 
-        # Orange = metric pointing in the tampered direction
+        # Use data-driven threshold if available, else fall back to 0.5
+        threshold = metric_thresholds[metric] if metric_thresholds else 0.5
+
+        # Orange = metric pointing in the tampered direction (relative to threshold)
         # Blue   = metric pointing in the clean direction
         if METRIC_TAMPERED_IS_LOW[metric]:
-            tampered_signal = val_display < 0.5   # low similarity → tampered
+            tampered_signal = val < threshold    # below median tampered → orange
         else:
-            tampered_signal = val_display >= 0.5  # high error → tampered
+            tampered_signal = val > threshold    # above median clean → orange
 
         bar_color = COLORS['tampered_bar'] if tampered_signal else COLORS['neutral_bar']
         alpha     = 0.4 + 0.6 * imp
@@ -345,7 +382,7 @@ def plot_probability_gauge(ax, prob, pred, ground_truth,
 # ---------------------------------------------------------------------------
 
 def build_figure(selected, importances, output_path,
-                 uvmap_dir=None, adv_dir=None):
+                 uvmap_dir=None, adv_dir=None, metric_thresholds=None):
     """
     One row per selected surface:
       [label | reference patch | → | adversarial patch | metric bars | prob gauge]
@@ -452,6 +489,7 @@ def build_figure(selected, importances, output_path,
         ax_metrics = fig.add_subplot(gs[0, 4])
         ax_metrics.set_facecolor(bg_color)
         plot_metric_bar(ax_metrics, row, importances,
+                        metric_thresholds=metric_thresholds,
                         show_title=is_first, show_xlabel=is_last)
         for spine in ax_metrics.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
@@ -509,7 +547,8 @@ def main():
 
     df = load_simsac_features(args.csv)
     clf, probs, preds = train_xgboost(df)
-    importances = dict(zip(METRICS, clf.feature_importances_))
+    importances        = dict(zip(METRICS, clf.feature_importances_))
+    metric_thresholds  = compute_metric_thresholds(df)
 
     selected = select_samples(df, probs, preds,
                               n_tampered=args.n_tampered,
@@ -517,7 +556,8 @@ def main():
 
     build_figure(selected, importances, output_path=args.output,
                  uvmap_dir=args.uvmap_dir,
-                 adv_dir=args.adv_dir)
+                 adv_dir=args.adv_dir,
+                 metric_thresholds=metric_thresholds)
 
 
 if __name__ == '__main__':
