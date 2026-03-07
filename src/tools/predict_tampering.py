@@ -366,7 +366,7 @@ def main():
 
     # Determine which predictors to run
     if args.predictor_type == 'all':
-        predictor_types = ['simple_threshold', 'decision_tree', 'random_forest', 'xgboost', 'ensemble']
+        predictor_types = ['random_forest', 'xgboost', 'ensemble']
     else:
         predictor_types = [args.predictor_type]
 
