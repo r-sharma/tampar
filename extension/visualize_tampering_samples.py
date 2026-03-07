@@ -325,37 +325,46 @@ def plot_probability_gauge(ax, prob, pred, ground_truth):
     ax.spines['left'].set_visible(False)
 
 
-def load_surface_images(row, data_dir):
-    """
-    Load reference (GT) and adversarial UV map images.
-
-    Reference  : data_dir / uvmaps / id_{parcel_id:02d}_uvmap.png
-    Adversarial: data_dir / row['view']  (full relative path stored in CSV)
-
-    Returns (ref_img, adv_img) as RGB numpy arrays, or None if not found.
-    """
+def _load_image(path):
+    """Load a single image from path as RGB numpy array, or return None."""
     import cv2 as _cv2
-    data_dir = Path(data_dir)
-    ref_img = adv_img = None
-
     try:
-        parcel_id = int(row['parcel_id'])
-        gt_path = data_dir / 'uvmaps' / f'id_{parcel_id:02d}_uvmap.png'
-        img = _cv2.imread(str(gt_path))
+        img = _cv2.imread(str(path))
         if img is not None:
-            ref_img = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
+            return _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
     except Exception:
         pass
+    return None
 
-    try:
-        adv_path = data_dir / str(row['view'])
-        img = _cv2.imread(str(adv_path))
-        if img is not None:
-            adv_img = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
-    except Exception:
-        pass
 
-    return ref_img, adv_img
+def load_surface_images(row, uvmap_dir=None, clean_dir=None, adv_dir=None):
+    """
+    Load up to three UV map images for a sample row.
+
+    ref_img  : GT reference  — uvmap_dir / id_{parcel_id:02d}_uvmap.png
+    clean_img: clean test    — clean_dir / row['view']
+    adv_img  : adversarial   — adv_dir   / row['view']
+
+    Each argument is optional; returns None for any that is not provided.
+    """
+    ref_img = clean_img = adv_img = None
+
+    if uvmap_dir is not None:
+        try:
+            parcel_id = int(row['parcel_id'])
+            ref_img = _load_image(
+                Path(uvmap_dir) / f'id_{parcel_id:02d}_uvmap.png'
+            )
+        except Exception:
+            pass
+
+    if clean_dir is not None:
+        clean_img = _load_image(Path(clean_dir) / str(row['view']))
+
+    if adv_dir is not None:
+        adv_img = _load_image(Path(adv_dir) / str(row['view']))
+
+    return ref_img, clean_img, adv_img
 
 
 def _show_uv_image(ax, img, title, title_color, border_color, bg_color):
@@ -376,20 +385,27 @@ def _show_uv_image(ax, img, title, title_color, border_color, bg_color):
         spine.set_linewidth(2.0)
 
 
-def build_figure(selected, importances, output_path, data_dir=None):
+def build_figure(selected, importances, output_path,
+                 uvmap_dir=None, clean_dir=None, adv_dir=None):
     """
     Build a figure with one column per sample.
 
     Layout per column (left → right):
       Header   : surface ID · ground-truth label · CORRECTLY DETECTED badge
-      Images   : Reference UV map  →  Adversarial UV map  (requires --data_dir)
+      Images   : Reference (GT)  →  Clean  →  Adversarial  (each optional)
       Metrics  : SimSAC similarity bars
       Gauge    : XGBoost tampering probability (spans full width)
+
+    Each image directory is optional; missing ones show a placeholder.
     """
     n = len(selected)
-    has_images = data_dir is not None
+    n_img_cols = sum([uvmap_dir is not None,
+                      clean_dir  is not None,
+                      adv_dir    is not None])
+    has_images = n_img_cols > 0
 
-    col_w = 11.0 if has_images else 7.0
+    # col_w grows with the number of image columns shown
+    col_w = 7.0 + 3.5 * n_img_cols
     fig = plt.figure(figsize=(col_w * n, 10))
     fig.patch.set_facecolor('#F8F9FA')
 
@@ -452,40 +468,59 @@ def build_figure(selected, importances, output_path, data_dir=None):
 
         # ── Content row ──────────────────────────────────────────────────────
         if has_images:
-            # 4 sub-columns: ref image | arrow | adv image | metric bars
-            content = inner[1].subgridspec(
-                1, 4,
-                width_ratios=[2.2, 0.28, 2.2, 3.5],
-                wspace=0.08,
-            )
-            ax_ref     = fig.add_subplot(content[0, 0])
-            ax_arr     = fig.add_subplot(content[0, 1])
-            ax_adv     = fig.add_subplot(content[0, 2])
-            ax_metrics = fig.add_subplot(content[0, 3])
-
-            ref_img, adv_img = load_surface_images(row, data_dir)
-
-            _show_uv_image(ax_ref, ref_img,
-                           title='Reference (GT)',
-                           title_color='#2471A3',
-                           border_color='#2471A3',
-                           bg_color='#EBF5FB')
-
-            # Arrow axes — just an arrow annotation, no frame
-            ax_arr.axis('off')
-            ax_arr.annotate(
-                '', xy=(0.90, 0.5), xytext=(0.10, 0.5),
-                xycoords='axes fraction', textcoords='axes fraction',
-                arrowprops=dict(arrowstyle='->', color='#555555',
-                                lw=2.0, mutation_scale=18),
+            ref_img, clean_img, adv_img = load_surface_images(
+                row, uvmap_dir=uvmap_dir, clean_dir=clean_dir, adv_dir=adv_dir
             )
 
-            adv_title = f"Adversarial ({'TAMPERED' if is_tampered else 'CLEAN'})"
-            _show_uv_image(ax_adv, adv_img,
-                           title=adv_title,
-                           title_color=badge_color,
-                           border_color=badge_color,
-                           bg_color=bg_color)
+            # Build dynamic column spec:
+            # each image slot = 2.2, each arrow = 0.25, metrics = 3.5
+            img_specs  = []   # list of (image, title, title_color, border, bg)
+            if uvmap_dir is not None:
+                img_specs.append((ref_img, 'Reference (GT)',
+                                  '#2471A3', '#2471A3', '#EBF5FB'))
+            if clean_dir is not None:
+                img_specs.append((clean_img, 'Clean',
+                                  '#1E8449', '#1E8449', '#EAFAF1'))
+            if adv_dir is not None:
+                adv_title = f"Adversarial ({'TAMPERED' if is_tampered else 'CLEAN'})"
+                img_specs.append((adv_img, adv_title,
+                                  badge_color, badge_color, bg_color))
+
+            n_imgs   = len(img_specs)
+            n_arrows = n_imgs - 1
+            # width_ratios: [img, arrow, img, arrow, ..., img, metrics]
+            ratios = []
+            for i in range(n_imgs):
+                ratios.append(2.2)
+                if i < n_arrows:
+                    ratios.append(0.25)
+            ratios.append(3.5)   # metrics column
+
+            total_cols = len(ratios)
+            content = inner[1].subgridspec(1, total_cols,
+                                           width_ratios=ratios,
+                                           wspace=0.08)
+
+            # Place image and arrow axes
+            col_cursor = 0
+            for i, (img, title, t_col, b_col, b_bg) in enumerate(img_specs):
+                ax_img = fig.add_subplot(content[0, col_cursor])
+                _show_uv_image(ax_img, img, title=title,
+                               title_color=t_col, border_color=b_col,
+                               bg_color=b_bg)
+                col_cursor += 1
+                if i < n_arrows:
+                    ax_arr = fig.add_subplot(content[0, col_cursor])
+                    ax_arr.axis('off')
+                    ax_arr.annotate(
+                        '', xy=(0.90, 0.5), xytext=(0.10, 0.5),
+                        xycoords='axes fraction', textcoords='axes fraction',
+                        arrowprops=dict(arrowstyle='->', color='#555555',
+                                        lw=2.0, mutation_scale=18),
+                    )
+                    col_cursor += 1
+
+            ax_metrics = fig.add_subplot(content[0, col_cursor])
         else:
             ax_metrics = fig.add_subplot(inner[1])
 
@@ -542,10 +577,15 @@ def main():
                         help='Number of correctly detected tampered samples (default: 2)')
     parser.add_argument('--n_clean', type=int, default=1,
                         help='Number of correctly detected clean samples (default: 1)')
-    parser.add_argument('--data_dir', default=None,
-                        help='Root data directory (tampar_sample/) containing uvmaps/ '
-                             'and the view paths from the CSV. '
-                             'If omitted, surface images are not shown.')
+    parser.add_argument('--uvmap_dir', default=None,
+                        help='Directory containing GT UV maps '
+                             '(id_XX_uvmap.png files, e.g. tampar_sample/uvmaps/).')
+    parser.add_argument('--clean_dir', default=None,
+                        help='Root directory for clean UV maps '
+                             '(row["view"] is appended to this path).')
+    parser.add_argument('--adv_dir', default=None,
+                        help='Root directory for adversarial UV maps '
+                             '(row["view"] is appended to this path).')
 
     args = parser.parse_args()
 
@@ -564,7 +604,9 @@ def main():
 
     # 4. Plot
     build_figure(selected, importances, output_path=args.output,
-                 data_dir=args.data_dir)
+                 uvmap_dir=args.uvmap_dir,
+                 clean_dir=args.clean_dir,
+                 adv_dir=args.adv_dir)
 
 
 if __name__ == '__main__':
