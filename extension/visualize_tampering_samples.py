@@ -135,12 +135,45 @@ def select_samples(df, probs, preds, n_tampered=3, n_clean=2):
     """
     Pick the most confidently correct tampered + clean surfaces.
     Confidence = |prob − 0.5|  (furthest from the decision boundary).
+
+    Each (parcel_id, sideface_name) pair is picked at most once, and we
+    prefer different parcel_ids so the figure is visually diverse.
     """
     df = df.copy()
     df['prob']       = probs
     df['pred']       = preds
     df['correct']    = (preds == df['tampered'].values)
     df['confidence'] = (df['prob'] - 0.5).abs()
+
+    def pick_diverse(pool, n):
+        """
+        Greedily pick n rows from pool (sorted by confidence desc),
+        skipping any (parcel_id, sideface_name) already seen.
+        Prefer different parcel_ids but don't hard-block them.
+        """
+        seen_surf  = set()   # (parcel_id, sideface_name) already selected
+        seen_parcels = set() # parcel_ids already selected (soft preference)
+        picked = []
+
+        # Two passes: first pass prefers different parcels, second pass allows repeats
+        for allow_repeat_parcel in [False, True]:
+            if len(picked) >= n:
+                break
+            for _, row in pool.iterrows():
+                if len(picked) >= n:
+                    break
+                pid  = row.get('parcel_id', None)
+                surf = row.get('sideface_name', None)
+                key  = (pid, surf)
+                if key in seen_surf:
+                    continue
+                if not allow_repeat_parcel and pid in seen_parcels:
+                    continue
+                seen_surf.add(key)
+                seen_parcels.add(pid)
+                picked.append(row)
+
+        return pd.DataFrame(picked)
 
     pool_t = df[(df['tampered'] == 1) & df['correct']].sort_values('confidence', ascending=False)
     pool_c = df[(df['tampered'] == 0) & df['correct']].sort_values('confidence', ascending=False)
@@ -150,7 +183,8 @@ def select_samples(df, probs, preds, n_tampered=3, n_clean=2):
     if len(pool_c) < n_clean:
         print(f"Warning: only {len(pool_c)} correctly detected clean surfaces (requested {n_clean})")
 
-    selected = pd.concat([pool_t.head(n_tampered), pool_c.head(n_clean)]).reset_index(drop=True)
+    selected = pd.concat([pick_diverse(pool_t, n_tampered),
+                          pick_diverse(pool_c, n_clean)]).reset_index(drop=True)
 
     print(f"\nSelected {min(n_tampered, len(pool_t))} tampered + {min(n_clean, len(pool_c))} clean surfaces:")
     for _, row in selected.iterrows():
@@ -174,6 +208,32 @@ def _load_image(path):
             return _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
     except Exception:
         pass
+    return None
+
+
+def _load_adv_image(adv_dir, row):
+    """
+    Try multiple path constructions to find the adversarial UV map.
+
+    Attempts (in order):
+      1. adv_dir / row['view']                          (full relative path)
+      2. adv_dir / row['background'] / filename         (background subfolder + filename)
+      3. adv_dir / filename                             (flat — filename only)
+    """
+    view       = str(row.get('view', ''))
+    background = str(row.get('background', ''))
+    filename   = Path(view).name
+    base       = Path(adv_dir)
+
+    candidates = [
+        base / view,
+        base / background / filename,
+        base / filename,
+    ]
+    for p in candidates:
+        img = _load_image(p)
+        if img is not None:
+            return img
     return None
 
 
@@ -214,12 +274,14 @@ def plot_metric_bar(ax, row, importances, show_title=True, show_xlabel=True):
         imp         = importances.get(metric, 0.0)
         val_display = min(max(val, 0.0), 1.0)   # clamp — MAE can be >1
 
+        # Orange = metric pointing in the tampered direction
+        # Blue   = metric pointing in the clean direction
         if METRIC_TAMPERED_IS_LOW[metric]:
-            signal_match = ((val_display < 0.5) == is_tampered)
+            tampered_signal = val_display < 0.5   # low similarity → tampered
         else:
-            signal_match = ((val_display >= 0.5) == is_tampered)
+            tampered_signal = val_display >= 0.5  # high error → tampered
 
-        bar_color = COLORS['tampered_bar'] if signal_match else COLORS['neutral_bar']
+        bar_color = COLORS['tampered_bar'] if tampered_signal else COLORS['neutral_bar']
         alpha     = 0.4 + 0.6 * imp
 
         ax.barh(i, val_display, color=bar_color, alpha=alpha, height=0.6,
@@ -339,7 +401,7 @@ def build_figure(selected, importances, output_path,
         if uvmap_dir is not None and parcel_id is not None:
             ref_uvmap = _load_image(Path(uvmap_dir) / f'id_{int(parcel_id):02d}_uvmap.png')
         if adv_dir is not None:
-            adv_uvmap = _load_image(Path(adv_dir) / view_path)
+            adv_uvmap = _load_adv_image(adv_dir, row)
 
         ref_patch = get_surface_patch(ref_uvmap, surf_name) if ref_uvmap is not None and surf_name in PATCH_INDEX else None
         adv_patch = get_surface_patch(adv_uvmap, surf_name) if adv_uvmap is not None and surf_name in PATCH_INDEX else None
