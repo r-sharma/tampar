@@ -400,7 +400,7 @@ def build_figure(selected, importances, output_path,
     n = len(selected)
 
     ROW_H      = 2.2   # inches per surface row
-    TOP_MARGIN = 2.0
+    TOP_MARGIN = 0.7
     BOT_MARGIN = 0.55
     fig_w      = 17.0
     fig_h      = n * ROW_H + TOP_MARGIN + BOT_MARGIN
@@ -511,7 +511,7 @@ def build_figure(selected, importances, output_path,
         ax_metrics.set_facecolor(bg_color)
         plot_metric_bar(ax_metrics, row, importances,
                         metric_thresholds=metric_thresholds,
-                        show_title=show_headers, show_xlabel=is_last)
+                        show_title=false, show_xlabel=is_last)
         for spine in ax_metrics.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
 
@@ -519,7 +519,7 @@ def build_figure(selected, importances, output_path,
         ax_gauge = fig.add_subplot(gs[0, 6])
         ax_gauge.set_facecolor(bg_color)
         plot_probability_gauge(ax_gauge, prob, row['pred'], is_tampered,
-                               show_title=show_headers, show_labels=show_headers)
+                               show_title=false, show_labels=show_headers)
         for spine in ax_gauge.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
 
