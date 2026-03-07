@@ -440,7 +440,7 @@ def build_figure(selected, importances, output_path,
         is_first = (i == 0)
         is_last  = (i == n - 1)
 
-        gs = outer[i].subgridspec(1, 6, width_ratios=col_ratios, wspace=0.07)
+        gs = outer[i].subgridspec(1, 6, width_ratios=col_ratios, wspace=0.18)
 
         # Load images for this surface
         ref_uvmap = None
