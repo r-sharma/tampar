@@ -424,8 +424,11 @@ def build_figure(selected, importances, output_path,
         hspace=0.12,
     )
 
-    # Column layout per row: [label | ref | arrow | adv | metrics | gauge]
-    col_ratios = [0.55, 2.2, 0.28, 2.2, 4.5, 2.3]
+    # Column layout per row:
+    # [label | ref | arrow | adv | spacer | metrics | gauge]
+    # Spacer (col 4) adds extra breathing room between adv image and metric bars.
+    # Arrow (col 2) is kept narrow to keep ref and adv close together.
+    col_ratios = [0.55, 2.2, 0.15, 2.2, 0.35, 4.5, 2.3]
 
     for i, (_, row) in enumerate(selected.iterrows()):
         is_tampered = bool(row['tampered'])
@@ -440,7 +443,12 @@ def build_figure(selected, importances, output_path,
         is_first = (i == 0)
         is_last  = (i == n - 1)
 
-        gs = outer[i].subgridspec(1, 6, width_ratios=col_ratios, wspace=0.18)
+        # Show column headers on the first row AND whenever the label changes
+        # (tampered → clean transition), so each group has its own header.
+        prev_tampered = bool(selected.iloc[i - 1]['tampered']) if i > 0 else None
+        show_headers  = is_first or (prev_tampered is not None and is_tampered != prev_tampered)
+
+        gs = outer[i].subgridspec(1, 7, width_ratios=col_ratios, wspace=0.10)
 
         # Load images for this surface
         ref_uvmap = None
@@ -460,8 +468,7 @@ def build_figure(selected, importances, output_path,
         for spine in ax_lbl.spines.values():
             spine.set_edgecolor(badge_color); spine.set_linewidth(1.8)
 
-        gt_text   = 'TAMPERED' if is_tampered else 'CLEAN'
-        pred_text = 'TAMPERED' if row['pred']  else 'CLEAN'
+        gt_text = 'TAMPERED' if is_tampered else 'CLEAN'
         ax_lbl.text(0.5, 0.72, surf_name.upper(),
                     ha='center', va='center', fontsize=10, fontweight='bold',
                     color=badge_color, transform=ax_lbl.transAxes)
@@ -477,7 +484,7 @@ def build_figure(selected, importances, output_path,
         # ── Col 1: Reference patch ───────────────────────────────────────────
         ax_ref = fig.add_subplot(gs[0, 1])
         _show_patch(ax_ref, ref_patch,
-                    title='Reference' if is_first else '',
+                    title='Reference' if show_headers else '',
                     title_color='#2471A3', border_color='#2471A3', bg_color='#EBF5FB')
 
         # ── Col 2: Arrow ─────────────────────────────────────────────────────
@@ -490,25 +497,29 @@ def build_figure(selected, importances, output_path,
 
         # ── Col 3: Adversarial patch ─────────────────────────────────────────
         ax_adv = fig.add_subplot(gs[0, 3])
-        adv_label = ('TAMPERED' if is_tampered else 'CLEAN')
+        adv_label = 'TAMPERED' if is_tampered else 'CLEAN'
         _show_patch(ax_adv, adv_patch,
-                    title=f'Adversarial ({adv_label})' if is_first else '',
+                    title=f'Adversarial ({adv_label})' if show_headers else '',
                     title_color=badge_color, border_color=badge_color, bg_color=bg_color)
 
-        # ── Col 4: SimSAC metric bars ─────────────────────────────────────────
-        ax_metrics = fig.add_subplot(gs[0, 4])
+        # ── Col 4: Spacer ─────────────────────────────────────────────────────
+        ax_sp = fig.add_subplot(gs[0, 4])
+        ax_sp.axis('off')
+
+        # ── Col 5: SimSAC metric bars ─────────────────────────────────────────
+        ax_metrics = fig.add_subplot(gs[0, 5])
         ax_metrics.set_facecolor(bg_color)
         plot_metric_bar(ax_metrics, row, importances,
                         metric_thresholds=metric_thresholds,
-                        show_title=is_first, show_xlabel=is_last)
+                        show_title=show_headers, show_xlabel=is_last)
         for spine in ax_metrics.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
 
-        # ── Col 5: Probability gauge ─────────────────────────────────────────
-        ax_gauge = fig.add_subplot(gs[0, 5])
+        # ── Col 6: Probability gauge ─────────────────────────────────────────
+        ax_gauge = fig.add_subplot(gs[0, 6])
         ax_gauge.set_facecolor(bg_color)
         plot_probability_gauge(ax_gauge, prob, row['pred'], is_tampered,
-                               show_title=is_first, show_labels=is_first)
+                               show_title=show_headers, show_labels=show_headers)
         for spine in ax_gauge.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
 
