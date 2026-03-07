@@ -45,7 +45,7 @@ METRIC_TAMPERED_IS_LOW = {
     'msssim': True,
     'cwssim': True,
     'ssim':   True,
-    'hog':    True,
+    'hog':    False,  # higher HOG → more tampered in this dataset
     'mae':    False,  # higher error → more tampered
 }
 
