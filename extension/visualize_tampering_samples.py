@@ -165,13 +165,21 @@ def train_xgboost(df):
 # Sample selection  (surface-level, not parcel-level)
 # ---------------------------------------------------------------------------
 
-def select_samples(df, probs, preds, n_tampered=3, n_clean=2):
+def select_samples(df, probs, preds, n_tampered=3, n_clean=2,
+                   random_state=None, top_k_factor=10):
     """
-    Pick the most confidently correct tampered + clean surfaces.
-    Confidence = |prob − 0.5|  (furthest from the decision boundary).
+    Pick correctly classified tampered + clean surfaces.
 
-    Each (parcel_id, sideface_name) pair is picked at most once, and we
-    prefer different parcel_ids so the figure is visually diverse.
+    Samples randomly from the top (n * top_k_factor) most confident
+    correct predictions, so results vary each run while still coming
+    from reasonably well-classified examples.
+
+    Parameters
+    ----------
+    random_state : int or None
+        Fixed seed for reproducibility. None (default) = different each run.
+    top_k_factor : int
+        Pool size multiplier. Pool = top (n * top_k_factor) confident samples.
     """
     df = df.copy()
     df['prob']       = probs
@@ -181,15 +189,17 @@ def select_samples(df, probs, preds, n_tampered=3, n_clean=2):
 
     def pick_diverse(pool, n):
         """
-        Greedily pick n rows from pool (sorted by confidence desc),
-        skipping any (parcel_id, sideface_name) already seen.
-        Prefer different parcel_ids but don't hard-block them.
+        Randomly pick n rows from pool, ensuring no duplicate
+        (parcel_id, sideface_name) and preferring different parcel_ids.
         """
-        seen_surf  = set()   # (parcel_id, sideface_name) already selected
-        seen_parcels = set() # parcel_ids already selected (soft preference)
-        picked = []
+        # Restrict to top confident, then shuffle for variety
+        top_k = min(len(pool), max(n * top_k_factor, n))
+        pool  = pool.head(top_k).sample(frac=1, random_state=random_state)
 
-        # Two passes: first pass prefers different parcels, second pass allows repeats
+        seen_surf    = set()
+        seen_parcels = set()
+        picked       = []
+
         for allow_repeat_parcel in [False, True]:
             if len(picked) >= n:
                 break
@@ -542,6 +552,8 @@ def main():
                         help='Directory containing reference UV maps (id_XX_uvmap.png)')
     parser.add_argument('--adv_dir',   default=None,
                         help='Root directory for adversarial UV maps (row["view"] appended)')
+    parser.add_argument('--random_state', type=int, default=None,
+                        help='Random seed for sample selection. Omit for a different result each run.')
 
     args = parser.parse_args()
 
@@ -552,7 +564,8 @@ def main():
 
     selected = select_samples(df, probs, preds,
                               n_tampered=args.n_tampered,
-                              n_clean=args.n_clean)
+                              n_clean=args.n_clean,
+                              random_state=args.random_state)
 
     build_figure(selected, importances, output_path=args.output,
                  uvmap_dir=args.uvmap_dir,
