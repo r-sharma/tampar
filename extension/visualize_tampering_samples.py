@@ -400,7 +400,7 @@ def build_figure(selected, importances, output_path,
     n = len(selected)
 
     ROW_H      = 2.2   # inches per surface row
-    TOP_MARGIN = 0.15
+    TOP_MARGIN = 2.0
     BOT_MARGIN = 0.55
     fig_w      = 17.0
     fig_h      = n * ROW_H + TOP_MARGIN + BOT_MARGIN
