@@ -565,10 +565,28 @@ def main():
                         help='Root directory for adversarial UV maps (row["view"] appended)')
     parser.add_argument('--random_state', type=int, default=None,
                         help='Random seed for sample selection. Omit for a different result each run.')
+    parser.add_argument('--include_parcels', type=int, nargs='+', default=None,
+                        metavar='ID',
+                        help='Only show samples from these parcel IDs (e.g. --include_parcels 3 7 12)')
+    parser.add_argument('--exclude_parcels', type=int, nargs='+', default=None,
+                        metavar='ID',
+                        help='Skip samples from these parcel IDs (e.g. --exclude_parcels 15 19)')
 
     args = parser.parse_args()
 
     df = load_simsac_features(args.csv)
+
+    # Optional parcel filtering
+    if args.include_parcels is not None:
+        before = len(df)
+        df = df[df['parcel_id'].isin(args.include_parcels)].copy()
+        print(f"include_parcels={args.include_parcels}: {before} → {len(df)} rows")
+    if args.exclude_parcels is not None:
+        before = len(df)
+        df = df[~df['parcel_id'].isin(args.exclude_parcels)].copy()
+        print(f"exclude_parcels={args.exclude_parcels}: {before} → {len(df)} rows")
+    if len(df) == 0:
+        raise ValueError("No rows remain after parcel filtering — check --include_parcels / --exclude_parcels.")
     clf, probs, preds = train_xgboost(df)
     importances        = dict(zip(METRICS, clf.feature_importances_))
     metric_thresholds  = compute_metric_thresholds(df)
