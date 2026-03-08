@@ -107,10 +107,24 @@ def load_model(checkpoint_path, device='cuda'):
 
     print(f"✓ Model loaded from epoch {checkpoint['epoch']}")
 
-    # Print training history if available (fine-tuned models)
+    # Print training history if available.
+    # Handles two checkpoint formats:
+    #   contrastive trainers  (train_simsac_*.py)         → 'train_loss',    'val_loss'
+    #   direct CM trainer     (train_simsac_direct_cm.py) → 'train_cm_loss', 'val_combined'
     if 'history' in checkpoint:
-        print(f"  Training loss: {checkpoint['history']['train_loss'][-1]:.4f}")
-        print(f"  Val loss: {checkpoint['history']['val_loss'][-1]:.4f}")
+        h = checkpoint['history']
+        train_key = 'train_loss'    if 'train_loss'   in h else \
+                    'train_cm_loss' if 'train_cm_loss' in h else None
+        val_key   = 'val_loss'      if 'val_loss'      in h else \
+                    'val_combined'  if 'val_combined'   in h else None
+        if train_key and h.get(train_key):
+            print(f"  Training loss : {h[train_key][-1]:.4f}")
+        if val_key and h.get(val_key):
+            print(f"  Val metric    : {h[val_key][-1]:.4f}")
+        for extra_key in ('val_clean_sep', 'val_adv_sep'):
+            if extra_key in h and h[extra_key]:
+                label = extra_key.replace('val_', '').replace('_', ' ').title()
+                print(f"  {label:<14}: {h[extra_key][-1]:.4f}")
     else:
         print(f"  Using pre-trained checkpoint (no training history)")
 
