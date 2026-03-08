@@ -1,5 +1,5 @@
 """
-SimSAC Direct Change Map Fine-tuning (Path C — No contrastive loss)
+SimSAC Direct Change Map Fine-tuning (Path C — No contrastive loss)  [v2]
 
 Directly fine-tunes SimSAC's change map output on pre-generated adversarial
 UV maps from contrastive_pairs_surface_wb_test. No projection head. No
@@ -11,29 +11,42 @@ Key design decisions that make this reliable:
      Tampered pairs → push change map HIGH
      Clean pairs    → push change map LOW
 
-  2. L2 regularisation toward original synthetic.pth weights
-     Prevents catastrophic forgetting of clean-image performance.
-     Without it: clean accuracy drops (as seen in Phase 2 full fine-tune → 65%)
-     With it:    clean accuracy stays close to 84% while adversarial improves
+  2. ALL layers unfrozen — pyramid (VGG, 7.7M) + decoder (~10.5M)
+     v1 bug: SimSaC_Model(evaluation=True) starts with pyramid frozen by default.
+     Without explicit requires_grad_(True), the optimizer only saw decoder params.
+     The PGD/FGSM attack lives in the pyramid features — training only the decoder
+     cannot unlearn the adversarial vulnerability → separation stays flat at -0.009.
+     Fix: explicitly unfreeze ALL parameters before creating the optimizer.
+     Two LR groups: pyramid at lr×0.1 (conservative), decoder at lr (full speed).
 
-  3. Mixed data per batch (clean + adversarial together in the pkl)
+  3. L2 regularisation toward original synthetic.pth weights (ALL params)
+     Prevents catastrophic forgetting of clean-image performance.
+     lambda_reg default raised to 0.5 (from v1's 0.1) because pyramid is now
+     trainable — stronger anchoring needed to prevent clean accuracy from dropping.
+
+  4. Mixed data per batch (clean + adversarial together in the pkl)
      The contrastive_pairs_surface_wb_test pkl already contains both clean and
      adversarial pairs (adversarial_simsac_test_wb_ep_10). Model sees both
      distributions every epoch → cannot forget clean while learning robustness.
-
-  4. Very small learning rate (default 1e-5)
-     Conservative backbone updates → stable training
 
   5. Per-epoch evaluation on BOTH clean and adversarial validation
      val_loader is the mixed val pkl; evaluate_separation splits by is_adv flag.
      Best checkpoint selected by: 0.5 * clean_sep + 0.5 * adv_sep
      where sep = tampered_mean_cm - clean_mean_cm (higher = better)
 
+v1 failure analysis:
+  - VGG pyramid was frozen (requires_grad=False, 7.7M params) by default.
+  - Change map separation stayed flat at ~-0.009 across all 15 epochs.
+  - Negative separation = tampered has LOWER change magnitude than clean
+    (adversarial attack's effect). Training only the decoder cannot overcome
+    compromised pyramid features — gradient never reached the attacked layer.
+  - Loss oscillated around a constant with no downward trend (noise only).
+
 Why this works against pre-generated PGD/FGSM attacks:
   - Attack was generated ONCE with original synthetic.pth (fixed perturbations)
   - Model trains to recognise and resist THOSE specific perturbation patterns
   - Unlike online training (arms race), this is stable offline adversarial training
-  - L2 reg ensures backbone doesn't move far from original → clean preserved
+  - L2 reg ensures neither pyramid nor decoder move far from original → clean preserved
 
 Usage:
     python extension/train_simsac_direct_cm.py \\
@@ -42,7 +55,7 @@ Usage:
         --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
         --output_dir   /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_direct_cm \\
         --lr 1e-5 \\
-        --lambda_reg 0.1 \\
+        --lambda_reg 0.5 \\
         --epochs 15
 """
 
@@ -200,11 +213,18 @@ class DirectCMTrainer:
         self.config = config
         self.device = device
 
-        self.optimizer = optim.Adam(
-            [p for p in simsac.parameters() if p.requires_grad],
-            lr=config['lr'],
-            weight_decay=0.0   # L2 reg is handled explicitly (toward original, not toward 0)
-        )
+        # Two LR groups: pyramid (VGG backbone) trains conservatively at lr×0.1
+        # to avoid destroying pretrained features; decoder trains at full lr.
+        # This mirrors Laplacian distillation v2 and avoids v1's flat-separation bug.
+        pyramid_params = list(simsac.pyramid.parameters())
+        pyramid_ids    = {id(p) for p in pyramid_params}
+        other_params   = [p for p in simsac.parameters()
+                          if id(p) not in pyramid_ids and p.requires_grad]
+
+        self.optimizer = optim.Adam([
+            {'params': pyramid_params, 'lr': config['lr'] * 0.1},
+            {'params': other_params,   'lr': config['lr']},
+        ], weight_decay=0.0)   # L2 reg handled explicitly (toward original, not toward 0)
         self.scheduler = ReduceLROnPlateau(
             self.optimizer, mode='max',   # maximise separation
             factor=0.5, patience=3, min_lr=1e-7
@@ -317,13 +337,16 @@ class DirectCMTrainer:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        pyr_lr = self.config['lr'] * 0.1
+        dec_lr = self.config['lr']
         print(f"\n{'='*65}")
-        print("SimSAC Direct Change Map Fine-tuning")
+        print("SimSAC Direct Change Map Fine-tuning  (v2 — pyramid unfrozen)")
         print(f"{'='*65}")
-        print(f"Epochs:      {self.config['epochs']}")
-        print(f"LR:          {self.config['lr']}")
-        print(f"Lambda reg:  {self.config['lambda_reg']}")
-        print(f"Output:      {output_dir}")
+        print(f"Epochs:           {self.config['epochs']}")
+        print(f"LR pyramid:       {pyr_lr:.1e}  (conservative — VGG backbone)")
+        print(f"LR decoder:       {dec_lr:.1e}")
+        print(f"Lambda reg:       {self.config['lambda_reg']}")
+        print(f"Output:           {output_dir}")
         print(f"{'='*65}")
 
         for epoch in range(self.config['epochs']):
@@ -337,7 +360,7 @@ class DirectCMTrainer:
 
             combined = 0.5 * clean_sep + 0.5 * adv_sep
             self.scheduler.step(combined)
-            lr = self.optimizer.param_groups[0]['lr']
+            lr = self.optimizer.param_groups[1]['lr']   # decoder LR (group index 1)
 
             self.history['train_cm_loss'].append(train_loss)
             self.history['val_clean_sep'].append(clean_sep)
@@ -352,7 +375,8 @@ class DirectCMTrainer:
             print(f"  Adv val sep:         {adv_sep:.4f}  "
                   f"(tampered={adv_t:.3f}, clean={adv_c:.3f})")
             print(f"  Combined (metric):   {combined:.4f}")
-            print(f"  LR:                  {lr:.2e}")
+            print(f"  LR decoder:          {lr:.2e}  "
+                  f"(pyramid: {self.optimizer.param_groups[0]['lr']:.2e})")
 
             # Save best
             is_best = combined > self.best_combined
@@ -426,7 +450,18 @@ class DirectCMTrainer:
 # ---------------------------------------------------------------------------
 
 def load_simsac(weights_path, device):
-    """Load raw SimSAC model from checkpoint."""
+    """
+    Load SimSAC, unfreeze ALL parameters, and apply gradient proxy patch.
+
+    v1 bug: SimSaC_Model(evaluation=True) starts with the VGG pyramid frozen
+    (requires_grad=False, ~7.7M params). The PGD/FGSM attack operates at the
+    pyramid feature level — training only the decoder cannot unlearn the
+    adversarial vulnerability. Result: flat separation (~-0.009) across all epochs.
+
+    Fix: explicitly set requires_grad=True for ALL parameters BEFORE the optimizer
+    is built. Two LR groups in DirectCMTrainer handle the conservative pyramid vs
+    faster decoder update rates.
+    """
     simsac = SimSaC_Model(
         evaluation=True,
         pyramid_type='VGG',
@@ -457,11 +492,23 @@ def load_simsac(weights_path, device):
 
     simsac.load_state_dict(state, strict=False)
     simsac = simsac.to(device)
+
+    # --- Unfreeze ALL parameters (pyramid + decoder) ---
+    # Without this, SimSaC_Model(evaluation=True) leaves the VGG pyramid frozen.
+    # The adversarial attack lives in pyramid features → must train pyramid to fix it.
+    for p in simsac.parameters():
+        p.requires_grad_(True)
+
     simsac.train()
     enable_simsac_gradients(simsac)
 
-    n_params = sum(p.numel() for p in simsac.parameters())
-    print(f"  ✓ SimSAC loaded ({n_params/1e6:.1f}M params) from {weights_path}")
+    n_total = sum(p.numel() for p in simsac.parameters())
+    n_train = sum(p.numel() for p in simsac.parameters() if p.requires_grad)
+    n_pyr   = sum(p.numel() for p in simsac.pyramid.parameters())
+    print(f"  ✓ SimSAC loaded ({n_total/1e6:.1f}M total, "
+          f"{n_train/1e6:.1f}M trainable) from {weights_path}")
+    print(f"    pyramid: {n_pyr/1e6:.1f}M @ lr×0.1 | "
+          f"decoder: {(n_train-n_pyr)/1e6:.1f}M @ lr")
     return simsac
 
 
@@ -495,8 +542,10 @@ def main():
                         help='Batch size (default: 8)')
     parser.add_argument('--lr', type=float, default=1e-5,
                         help='Learning rate (default: 1e-5, keep small to prevent forgetting)')
-    parser.add_argument('--lambda_reg', type=float, default=0.1,
-                        help='L2 regularisation weight toward original weights (default: 0.1). '
+    parser.add_argument('--lambda_reg', type=float, default=0.5,
+                        help='L2 regularisation weight toward original weights (default: 0.5). '
+                             'Raised from v1 default of 0.1 because the pyramid is now trainable '
+                             'and needs stronger anchoring to prevent clean accuracy dropping. '
                              'Increase if clean accuracy drops, decrease if adv improvement is slow.')
     parser.add_argument('--grad_clip', type=float, default=1.0)
     parser.add_argument('--num_workers', type=int, default=2,
@@ -516,13 +565,13 @@ def main():
         device = 'cpu'
 
     print(f"\n{'='*65}")
-    print("SimSAC Direct Change Map Fine-tuning")
+    print("SimSAC Direct Change Map Fine-tuning  (v2 — pyramid unfrozen)")
     print(f"{'='*65}")
     print(f"Train pairs:    {args.clean_pairs}")
     print(f"Val pairs:      {args.val_pairs}")
     print(f"Weights:        {args.weights_path}")
-    print(f"LR:             {args.lr}  (keep low to prevent catastrophic forgetting)")
-    print(f"Lambda reg:     {args.lambda_reg}  (L2 toward original weights)")
+    print(f"LR decoder:     {args.lr}    (pyramid: {args.lr*0.1:.1e})")
+    print(f"Lambda reg:     {args.lambda_reg}  (L2 toward original weights, all params)")
     print(f"Note: pkls from contrastive_pairs_surface_wb_test already contain")
     print(f"      both clean and adversarial (adversarial_simsac_test_wb_ep_10) pairs.")
 
