@@ -299,7 +299,7 @@ def _show_patch(ax, img, title, title_color, border_color, bg_color):
                 fontsize=8, color='#888888', transform=ax.transAxes, style='italic')
     ax.set_xticks([]); ax.set_yticks([])
     if title:
-        ax.set_title(title, fontsize=8, fontweight='bold', color=title_color, pad=3)
+        ax.set_title(title, fontsize=12, fontweight='bold', color=title_color, pad=4)
     for spine in ax.spines.values():
         spine.set_edgecolor(border_color)
         spine.set_linewidth(1.8)
@@ -348,7 +348,7 @@ def plot_metric_bar(ax, row, importances, metric_thresholds=None,
     if show_xlabel:
         ax.set_xlabel('Metric Value', fontsize=8)
     if show_title:
-        ax.set_title('SimSAC Similarity Features', fontsize=9, color='#444444', pad=4)
+        ax.set_title('SimSAC Similarity Features', fontsize=12, color='#444444', pad=4)
     ax.axvline(0.5, color='gray', linestyle='--', linewidth=0.8, alpha=0.6)
     ax.text(0.5, -0.7, '0.5', ha='center', va='top', fontsize=7, color='gray')
     ax.spines['top'].set_visible(False)
@@ -381,7 +381,7 @@ def plot_probability_gauge(ax, prob, pred, ground_truth,
         ax.text(0.98, 0.1, 'TAMPERED', fontsize=8, color=COLORS['prob_high'],
                 fontweight='bold', va='bottom', ha='right')
     if show_title:
-        ax.set_title('XGBoost Probability', fontsize=9, color='#444444', pad=4)
+        ax.set_title('XGBoost Probability', fontsize=12, color='#444444', pad=4)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_visible(False)
@@ -428,7 +428,7 @@ def build_figure(selected, importances, output_path,
     # [label | ref | arrow | adv | spacer | metrics | gauge]
     # Spacer (col 4) adds extra breathing room between adv image and metric bars.
     # Arrow (col 2) is kept narrow to keep ref and adv close together.
-    col_ratios = [0.55, 2.2, 0.15, 2.2, 0.35, 4.5, 2.3]
+    col_ratios = [0.55, 2.2, 0.15, 2.2, 0.35, 3.0, 2.3]
 
     for i, (_, row) in enumerate(selected.iterrows()):
         is_tampered = bool(row['tampered'])
@@ -467,6 +467,10 @@ def build_figure(selected, importances, output_path,
         ax_lbl.set_xticks([]); ax_lbl.set_yticks([])
         for spine in ax_lbl.spines.values():
             spine.set_edgecolor(badge_color); spine.set_linewidth(1.8)
+
+        if show_headers:
+            ax_lbl.set_title('Surface /\nParcel ID', fontsize=12, fontweight='bold',
+                             color='#444444', pad=4)
 
         gt_text = 'TAMPERED' if is_tampered else 'CLEAN'
         ax_lbl.text(0.5, 0.72, surf_name.upper(),
