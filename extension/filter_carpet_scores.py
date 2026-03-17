@@ -33,7 +33,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"Filtering for background: {args.background}")
+    print(f"Filtering scores for background: {args.background}")
 
     # Load dataframes
     print(f"\nLoading clean scores from: {args.clean_csv}")

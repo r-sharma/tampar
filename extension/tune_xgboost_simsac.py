@@ -196,7 +196,7 @@ def grid_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     for v in GRID_SEARCH_PARAMS.values():
         total *= len(v)
     print(f"GridSearchCV  ({total} configurations, {n_cv_splits}-fold CV on clean)")
-    print("This may take a while")
+    print("This may take a moment")
 
     base = make_base_xgb()
     gs = GridSearchCV(

@@ -94,7 +94,7 @@ def process_adversarial_dataset(
     adversarial_path = Path(adversarial_dir)
     uvmaps_path = Path(uvmaps_dir)
 
-    print(f"Computing similarity scores WITH denoising")
+    print(f"Computing similarity scores with denoising")
     print(f"Adversarial directory: {adversarial_dir}")
     print(f"Reference directory: {uvmaps_dir}")
     print(f"Denoising method: {denoising_method}")

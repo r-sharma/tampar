@@ -568,7 +568,7 @@ def main():
 
     device = args.device if torch.cuda.is_available() else 'cpu'
 
-    print("Feature Extraction for Tampering Detection (Task 5.8)")
+    print("Feature Extraction for Tampering Detection")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Data root: {args.data_root}")
     print(f"Mode: {args.mode}")

@@ -20,13 +20,13 @@ CONTEXT_METRICS = ['msssim', 'ssim', 'hog', 'mae', 'log_cwssim']
 
 # XGBoost params matching predictor.py baseline (for a fair features-only comparison)
 BASELINE_PARAMS = dict(n_estimators=100, max_depth=5, learning_rate=0.1,
-                       eval_metric='logloss', verbosity=0, random_state=42)
+                       eval_metric='logloss', verbosity=1, random_state=42)
 
 # Tuned params for best performance
 TUNED_PARAMS    = dict(n_estimators=600, max_depth=5, learning_rate=0.05,
                        subsample=0.8, colsample_bytree=0.8,
                        min_child_weight=3, gamma=0.1,
-                       eval_metric='logloss', verbosity=0, random_state=42)
+                       eval_metric='logloss', verbosity=1, random_state=42)
 
 
 # Feature engineering

@@ -42,7 +42,7 @@ def compute_pair_similarity(model, image1_path, image2_path, device):
 
 
 def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, top_k=None):
-    print("HARD NEGATIVE MINING")
+    print("Hard Negative Mining")
 
     # Load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

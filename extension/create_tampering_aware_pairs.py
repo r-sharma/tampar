@@ -47,7 +47,7 @@ class TamperingPairGenerator:
 
         print(f"\nLoaded {len(self.parcels)} parcels from {data_root}")
         print(f"Surface types: {self.surface_types}")
-        print(f"Tampering mapping: {len(self.tampering_mapping)} parcels")
+        print(f"Tampering labels: {len(self.tampering_mapping)} parcels")
 
     def _load_tampering_mapping(self):
         import pandas as pd
