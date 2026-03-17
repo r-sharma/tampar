@@ -214,7 +214,7 @@ def analyze_similarities(similarities, labels, output_dir):
     
     plt.tight_layout()
     plot_path = output_dir / 'similarity_distributions.png'
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    plt.savefig(plot_path, dpi=200, bbox_inches='tight')
     plt.close()
     
     print(f"\n Saved: {plot_path}")
@@ -324,7 +324,7 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
 
     plt.tight_layout()
     plot_path = output_dir / 'feature_distributions.png'
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    plt.savefig(plot_path, dpi=200, bbox_inches='tight')
     plt.close()
     print(f"\n Saved: {plot_path}")
 
@@ -350,7 +350,7 @@ def plot_confusion_matrix(labels, predictions, output_dir):
     plt.title('Confusion Matrix - Pair Classification')
     
     plot_path = output_dir / 'confusion_matrix.png'
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    plt.savefig(plot_path, dpi=200, bbox_inches='tight')
     plt.close()
     
     print(f" Saved: {plot_path}")
@@ -411,7 +411,7 @@ def visualize_tsne(embeddings1, embeddings2, labels, output_dir):
     
     plt.tight_layout()
     plot_path = output_dir / 'tsne_visualization.png'
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    plt.savefig(plot_path, dpi=200, bbox_inches='tight')
     plt.close()
     
     print(f" Saved: {plot_path}")
