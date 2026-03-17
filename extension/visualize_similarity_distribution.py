@@ -127,12 +127,12 @@ def compute_similarities(model, dataloader, device):
 
 
 def plot_similarity_distribution(pos_sim, neg_sim, neg_labels, output_path):
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
 
     # 1. Overall distribution
     ax = axes[0, 0]
-    ax.hist(pos_sim, bins=50, alpha=0.6, label='Positive (Clean vs Clean)', color='green', density=True)
-    ax.hist(neg_sim, bins=50, alpha=0.6, label='Negative (Clean vs Tampered)', color='red', density=True)
+    ax.hist(pos_sim, bins=40, alpha=0.6, label='Positive (Clean vs Clean)', color='green', density=True)
+    ax.hist(neg_sim, bins=40, alpha=0.6, label='Negative (Clean vs Tampered)', color='red', density=True)
     ax.set_xlabel('Cosine Similarity')
     ax.set_ylabel('Density')
     ax.set_title('Similarity Distribution: Positive vs Negative Pairs')
