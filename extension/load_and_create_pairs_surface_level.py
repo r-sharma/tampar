@@ -785,7 +785,7 @@ class SurfaceLevelPairCreator:
         # Save
         safe_type_name = pair_type.replace('_', '-')
         output_file = output_dir / f"{label_str.lower()}_{safe_type_name}.png"
-        plt.savefig(output_file, dpi=150, bbox_inches='tight')
+        plt.savefig(output_file, dpi=200, bbox_inches='tight')
         plt.close()
 
         print(f"   {label_str}: {pair_type} ({num_pairs} pairs) -> {output_file.name}")
@@ -857,7 +857,7 @@ class SurfaceLevelPairCreator:
 
             safe_type_name = pair_type.replace('_', '-')
             output_file = output_dir / f"summary_{label_str.lower()}_{safe_type_name}.png"
-            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            plt.savefig(output_file, dpi=200, bbox_inches='tight')
             plt.close()
 
             print(f"   {label_str}: {pair_type} -> {output_file.name}")

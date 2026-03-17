@@ -196,7 +196,7 @@ def visualize_outlier_pair(pairs, idx, output_dir):
 
     # Save
     output_path = output_dir / f'pair_{idx}_visualization.png'
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=200, bbox_inches='tight')
     plt.close()
 
     print(f" Saved visualization: {output_path}")

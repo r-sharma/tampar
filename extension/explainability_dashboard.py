@@ -158,7 +158,7 @@ class ExplainabilityDashboard:
             )
 
         path = self.output_dir / f"parcel_{result.parcel_id:02d}_overview.png"
-        plt.savefig(path, dpi=150, bbox_inches='tight',
+        plt.savefig(path, dpi=200, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close()
         return path
@@ -231,7 +231,7 @@ class ExplainabilityDashboard:
 
         plt.tight_layout()
         path = self.output_dir / f"parcel_{result.parcel_id:02d}_heatmaps.png"
-        plt.savefig(path, dpi=150, bbox_inches='tight',
+        plt.savefig(path, dpi=200, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close()
         return path
@@ -307,7 +307,7 @@ class ExplainabilityDashboard:
 
         plt.tight_layout()
         path = self.output_dir / f"parcel_{result.parcel_id:02d}_metrics.png"
-        plt.savefig(path, dpi=150, bbox_inches='tight',
+        plt.savefig(path, dpi=200, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close()
         return path
@@ -363,7 +363,7 @@ class ExplainabilityDashboard:
 
         plt.tight_layout()
         path = self.output_dir / f"parcel_{result.parcel_id:02d}_masks.png"
-        plt.savefig(path, dpi=150, bbox_inches='tight',
+        plt.savefig(path, dpi=200, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close()
         return path
@@ -475,7 +475,7 @@ class ExplainabilityDashboard:
 
         plt.tight_layout()
         path = self.output_dir / f"parcel_{result.parcel_id:02d}_verdict.png"
-        plt.savefig(path, dpi=150, bbox_inches='tight',
+        plt.savefig(path, dpi=200, bbox_inches='tight',
                     facecolor=fig.get_facecolor())
         plt.close()
         return path

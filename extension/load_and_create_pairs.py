@@ -364,7 +364,7 @@ class TAMPARDatasetLoader:
         
         plt.tight_layout()
         output_path = self.data_root / 'sample_uvmaps_visualization_all.png'
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.savefig(output_path, dpi=200, bbox_inches='tight')
         print(f"\n Visualization saved to: {output_path}")
         plt.close()
         
@@ -686,7 +686,7 @@ class ContrastivePairCreator:
             
             plt.tight_layout()
             pos_path = Path(output_dir) / 'positive_pairs_examples.png'
-            plt.savefig(pos_path, dpi=150, bbox_inches='tight')
+            plt.savefig(pos_path, dpi=200, bbox_inches='tight')
             print(f" Positive pairs visualization: {pos_path}")
             plt.close()
         
@@ -724,7 +724,7 @@ class ContrastivePairCreator:
             
             plt.tight_layout()
             neg_path = Path(output_dir) / 'negative_pairs_examples.png'
-            plt.savefig(neg_path, dpi=150, bbox_inches='tight')
+            plt.savefig(neg_path, dpi=200, bbox_inches='tight')
             print(f" Negative pairs visualization: {neg_path}")
             plt.close()
     
