@@ -21,9 +21,7 @@ from src.simsac.models.our_models.SimSaC import SimSaC_Model
 from contrastive_dataset import ContrastivePairsDataset
 
 
-# ---------------------------------------------------------------------------
 # SimSAC gradient patch (same as train_simsac_online_adv.py)
-# ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
     def forward_with_grad(self, im_target, im_source,
@@ -86,9 +84,7 @@ def l2_reg_loss(model, original_params):
     return reg
 
 
-# ---------------------------------------------------------------------------
 # Trainer
-# ---------------------------------------------------------------------------
 
 class DirectCMTrainer:
 
@@ -101,9 +97,6 @@ class DirectCMTrainer:
         self.config = config
         self.device = device
 
-        # Two LR groups: pyramid (VGG backbone) trains conservatively at lr×0.1
-        # to avoid destroying pretrained features; decoder trains at full lr.
-        # This mirrors Laplacian distillation v2 and avoids v1's flat-separation bug.
         pyramid_params = list(simsac.pyramid.parameters())
         pyramid_ids    = {id(p) for p in pyramid_params}
         other_params   = [p for p in simsac.parameters()
@@ -177,7 +170,7 @@ class DirectCMTrainer:
     def evaluate_separation(self, loader):
         self.simsac.eval()
 
-        # (is_adv=False/True, label=0/1) → list of magnitudes
+        # (is_adv=False/True, label=0/1)  list of magnitudes
         cms = {(False, 0): [], (False, 1): [], (True, 0): [], (True, 1): []}
 
         for img1, img2, labels, is_advs in loader:
@@ -259,7 +252,7 @@ class DirectCMTrainer:
                 self.best_combined = combined
                 self.best_epoch = epoch + 1
                 self._save(epoch, output_dir, 'best.pth')
-                print(f"  ✓ New best model saved (combined sep: {combined:.4f})")
+                print(f"   New best model saved (combined sep: {combined:.4f})")
 
             # Save every 5 epochs
             if (epoch + 1) % 5 == 0:
@@ -318,9 +311,7 @@ class DirectCMTrainer:
         print(f"  Plot saved.")
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def load_simsac(weights_path, device):
     simsac = SimSaC_Model(
@@ -354,9 +345,6 @@ def load_simsac(weights_path, device):
     simsac.load_state_dict(state, strict=False)
     simsac = simsac.to(device)
 
-    # --- Unfreeze ALL parameters (pyramid + decoder) ---
-    # Without this, SimSaC_Model(evaluation=True) leaves the VGG pyramid frozen.
-    # The adversarial attack lives in pyramid features → must train pyramid to fix it.
     for p in simsac.parameters():
         p.requires_grad_(True)
 
@@ -366,7 +354,7 @@ def load_simsac(weights_path, device):
     n_total = sum(p.numel() for p in simsac.parameters())
     n_train = sum(p.numel() for p in simsac.parameters() if p.requires_grad)
     n_pyr   = sum(p.numel() for p in simsac.pyramid.parameters())
-    print(f"  ✓ SimSAC loaded ({n_total/1e6:.1f}M total, "
+    print(f"   SimSAC loaded ({n_total/1e6:.1f}M total, "
           f"{n_train/1e6:.1f}M trainable) from {weights_path}")
     print(f"    pyramid: {n_pyr/1e6:.1f}M @ lr×0.1 | "
           f"decoder: {(n_train-n_pyr)/1e6:.1f}M @ lr")
@@ -380,8 +368,6 @@ def main():
         epilog=__doc__
     )
 
-    # Data — both pkls come from contrastive_pairs_surface_wb_test
-    # which already contains mixed clean + adversarial (adversarial_simsac_test_wb_ep_10) pairs
     parser.add_argument('--clean_pairs', type=str, required=True,
                         help='Path to train_pairs_surface_level.pkl '
                              '(from contrastive_pairs_surface_wb_test — '
@@ -437,21 +423,14 @@ def main():
     # Load SimSAC
     simsac = load_simsac(args.weights_path, device)
 
-    # Store original weights for L2 regularisation
-    # These are the synthetic.pth values we regularise toward
     original_params = {
         name: param.data.clone().detach()
         for name, param in simsac.named_parameters()
     }
-    print(f"  ✓ Original weights stored for L2 regularisation "
+    print(f"   Original weights stored for L2 regularisation "
           f"({len(original_params)} parameter tensors)")
 
-    # Datasets — ContrastivePairsDataset handles:
-    #   - keys 'image1'/'surface1' and 'image2'/'surface2' (numpy arrays in pkl)
-    #   - numpy → PIL conversion
-    #   - ImageNet normalisation
-    #   - is_adversarial detection from image2_path / pair_type / metadata
-    print(f"\nBuilding datasets...")
+    print(f"\nBuilding datasets")
     train_dataset = ContrastivePairsDataset(args.clean_pairs)
     val_dataset   = ContrastivePairsDataset(args.val_pairs)
 

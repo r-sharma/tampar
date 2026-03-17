@@ -337,7 +337,7 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
 
 
 def plot_confusion_matrix(labels, predictions, output_dir):
-    print(f"\nPlotting confusion matrix...")
+    print(f"\nPlotting confusion matrix")
     
     cm = confusion_matrix(labels, predictions)
     
@@ -492,7 +492,7 @@ def main():
 
     mode = args.mode
     if mode == 'auto':
-        print(f"\nAuto-detecting checkpoint mode (lightweight peek)...")
+        print(f"\nAuto-detecting checkpoint mode (lightweight peek)")
         ckpt_peek = torch.load(args.checkpoint, map_location='cpu')
         mode = detect_checkpoint_mode(ckpt_peek)
         if mode == 'unknown':

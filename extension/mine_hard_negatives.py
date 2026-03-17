@@ -54,7 +54,7 @@ def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, 
     model.to(device)
     model.eval()
 
-    print(f"✓ Model loaded on {device}")
+    print(f" Model loaded on {device}")
 
     # Load pairs
     print(f"\nLoading pairs from: {pairs_csv}")
@@ -62,7 +62,7 @@ def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, 
 
     # Filter for negative pairs only
     negative_pairs = pairs_df[pairs_df['label'] == 0].copy()
-    print(f"✓ Found {len(negative_pairs)} negative pairs")
+    print(f" Found {len(negative_pairs)} negative pairs")
 
     # Filter for adversarial tampered pairs
     adv_tampered = negative_pairs[
@@ -71,14 +71,14 @@ def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, 
          negative_pairs['pair_type'].str.contains('tampered', na=False))
     ].copy()
 
-    print(f"✓ Found {len(adv_tampered)} adversarial tampered negative pairs")
+    print(f" Found {len(adv_tampered)} adversarial tampered negative pairs")
 
     if len(adv_tampered) == 0:
-        print("⚠ No adversarial tampered pairs found!")
+        print(" No adversarial tampered pairs found!")
         return
 
     # Compute similarities for all adversarial tampered pairs
-    print(f"\nComputing similarities for adversarial tampered pairs...")
+    print(f"\nComputing similarities for adversarial tampered pairs")
     similarities = []
 
     for idx, row in tqdm(adv_tampered.iterrows(), total=len(adv_tampered)):
@@ -114,12 +114,12 @@ def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, 
 
     # Optionally limit to top K
     if top_k and len(hard_negatives) > top_k:
-        print(f"\n⚠ Limiting to top {top_k} hardest negatives")
+        print(f"\n Limiting to top {top_k} hardest negatives")
         hard_negatives = hard_negatives.head(top_k)
 
     # Save
     hard_negatives.to_csv(output_csv, index=False)
-    print(f"\n✓ Saved hard negatives to: {output_csv}")
+    print(f"\n Saved hard negatives to: {output_csv}")
 
     # Analysis by attack type
     if 'metadata' in hard_negatives.columns:

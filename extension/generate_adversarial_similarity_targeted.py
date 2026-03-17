@@ -69,9 +69,6 @@ class SimilarityTargetedAttackGenerator:
         mae_value = pytorch_mae(field_img, reference_img)
         mse_value = pytorch_mse(field_img, reference_img)
 
-        # Loss: We want to MAXIMIZE SSIM, MINIMIZE MAE and MSE
-        # So we negate SSIM and add MAE + MSE
-        # Weight MAE more heavily as it's what the classifier uses
         loss = -ssim_value + 10.0 * mae_value + mse_value
 
         return loss
@@ -237,8 +234,6 @@ def generate_adversarial_dataset(
             progress_bar = tqdm(uvmap_files, desc=f"  {attack_method.upper()} attack")
             for uvmap_file in progress_bar:
                 try:
-                    # Extract parcel ID from filename
-                    # Format: id_01_20230523_155225_uvmap_gt.png
                     filename_parts = uvmap_file.stem.split('_')
                     parcel_id = filename_parts[1]
 
@@ -267,7 +262,7 @@ def generate_adversarial_dataset(
                     progress_bar.write(f"    Error processing {uvmap_file.name}: {str(e)}")
                     failed += 1
 
-            print(f"  ✓ Successful: {successful}, ✗ Failed: {failed}")
+            print(f"   Successful: {successful},  Failed: {failed}")
 
     print(f"Adversarial dataset generation complete!")
     print(f"Output directory: {output_path}")
@@ -311,8 +306,6 @@ def main():
     # Auto-detect uvmaps_dir if not provided
     data_dir_path = Path(args.data_dir)
     if args.uvmaps_dir is None:
-        # Assume data_dir is like /path/to/tampar/validation
-        # and uvmaps_dir is /path/to/tampar/uvmaps
         uvmaps_dir = data_dir_path.parent / 'uvmaps'
         if not uvmaps_dir.exists():
             raise ValueError(f"Could not auto-detect uvmaps_dir. Expected at {uvmaps_dir}. Please provide --uvmaps_dir explicitly.")

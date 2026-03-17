@@ -16,8 +16,6 @@ import os
 # Add src to path - handle both local and Colab environments
 parent_dir = Path(__file__).parent.parent
 
-# IMPORTANT: Add parent_dir FIRST so that 'from src.simsac...' works
-# The simsac/inference.py file imports as 'from src.simsac...'
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
@@ -38,7 +36,7 @@ def compute_embeddings(pairs, model, device='cuda'):
     labels = []
     is_adversarial = []
 
-    print("Computing embeddings...")
+    print("Computing embeddings")
     skipped = 0
     with torch.no_grad():
         for pair in tqdm(pairs):
@@ -230,7 +228,7 @@ def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embeddin
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"\n✓ Saved visualization: {output_path}")
+    print(f"\n Saved visualization: {output_path}")
 
 
 def main():

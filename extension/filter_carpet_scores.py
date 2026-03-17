@@ -9,8 +9,6 @@ def filter_by_background(df, background_name, is_adversarial=False):
         mask = df['background'].str.contains(f'{background_name}_adv')
         df_filtered = df[mask].copy()
     else:
-        # Clean backgrounds: check if view contains /carpet/
-        # or background == 'validation' (for validation folder structure)
         mask = df['view'].str.contains(f'/{background_name}/')
         df_filtered = df[mask].copy()
 
@@ -56,7 +54,7 @@ def main():
     print(f"  Adversarial filtered: {len(df_adv_filtered)} rows")
 
     # Save filtered datasets
-    print(f"\nSaving filtered datasets...")
+    print(f"\nSaving filtered datasets")
     df_clean_filtered.to_csv(args.output_clean, index=False)
     print(f"  Clean: {args.output_clean}")
 
@@ -83,7 +81,7 @@ def main():
         print(f"\nAdversarial - tampering distribution:")
         print(df_adv_filtered['tampered'].value_counts())
 
-    print(f"\n✓ Filtering complete!")
+    print(f"\n Filtering complete!")
 
 
 if __name__ == "__main__":

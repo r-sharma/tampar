@@ -107,8 +107,6 @@ class SimSaCMultiTask(nn.Module):
             for param in self.simsac.parameters():
                 param.requires_grad = False
 
-        # Get feature dimension from SimSaC (typically 256)
-        # This is the output dimension from the feature pyramid
         feature_dim = 256
 
         # Multi-task heads
@@ -137,20 +135,10 @@ class SimSaCMultiTask(nn.Module):
             # Get flow and change maps
             flow, change = self.simsac(img1, img2, img1_256, img2_256)
 
-            # Extract features from change map
-            # change has shape [B, 2, H, W] (2 channels: change score for each direction)
-            # We'll use global average pooling to get fixed-size features
             change_features = F.adaptive_avg_pool2d(change, (1, 1))
             change_features = change_features.view(change_features.size(0), -1)
 
-            # Also extract features from the SimSaC decoder
-            # We'll use the last decoder features which have richer information
-            # Access intermediate features from the decoder
-            # For now, we'll use change map features (2-d) and expand to 256-d in the heads
 
-            # Since SimSaC outputs are low-dimensional, we need to extract richer features
-            # Let's use the feature pyramid instead
-            # We'll modify this to extract from intermediate layers
 
             # For now, using a simple approach: concatenate flow and change statistics
             flow_mag = torch.norm(flow, dim=1, keepdim=True)
@@ -218,7 +206,7 @@ if __name__ == "__main__":
     # Test model creation
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    print("Creating multi-task model...")
+    print("Creating multi-task model")
     model = create_multitask_model(
         simsac_checkpoint=None,
         freeze_simsac=False,
@@ -235,7 +223,7 @@ if __name__ == "__main__":
     print(f"  Total: {sum(p.numel() for p in model.parameters())} parameters")
 
     # Test forward pass
-    print("\nTesting forward pass...")
+    print("\nTesting forward pass")
     batch_size = 4
     img1 = torch.randn(batch_size, 3, 512, 512).to(device)
     img2 = torch.randn(batch_size, 3, 512, 512).to(device)
@@ -249,4 +237,4 @@ if __name__ == "__main__":
     print(f"  Features shape: {features.shape}")
     print(f"  Embeddings norm: {torch.norm(embeddings, dim=1).mean():.4f} (should be ~1.0)")
 
-    print("\n✓ Model creation and forward pass successful!")
+    print("\n Model creation and forward pass successful!")

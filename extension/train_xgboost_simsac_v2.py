@@ -13,9 +13,7 @@ from xgboost import XGBClassifier
 
 warnings.filterwarnings('ignore')
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 
 BASE_METRICS    = ['msssim', 'cwssim', 'ssim', 'hog', 'mae']
 CONTEXT_METRICS = ['msssim', 'ssim', 'hog', 'mae', 'log_cwssim']
@@ -31,21 +29,16 @@ TUNED_PARAMS    = dict(n_estimators=600, max_depth=5, learning_rate=0.05,
                        eval_metric='logloss', verbosity=0, random_state=42)
 
 
-# ---------------------------------------------------------------------------
 # Feature engineering
-# ---------------------------------------------------------------------------
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # ── 1. CW-SSIM transforms ────────────────────────────────────────────────
-    # cwssim saturates at 1e6; 75%+ of values are exactly 500k or 1M.
-    # log1p captures the informative lower tail; saturation flags give the rest.
     df['log_cwssim']       = np.log1p(df['cwssim'])
     df['cwssim_saturated'] = (df['cwssim'] >= 999_999).astype(float)
     df['cwssim_mid']       = ((df['cwssim'] >= 499_999) & (df['cwssim'] < 999_999)).astype(float)
 
-    # ── 2. Composite / interaction features ──────────────────────────────────
+    #  2. Composite / interaction features 
     eps = 1e-6
     df['tam_score']        = (1 - df['msssim']) * (1 - df['ssim']) * df['mae']
     df['high_sim']         = df['msssim'] * df['ssim']
@@ -55,9 +48,6 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['ssim_msssim_diff'] = (df['ssim'] - df['msssim']).abs()
     df['cwssim_pct']       = df['cwssim'].rank(pct=True)
 
-    # ── 3. Parcel-view context features ──────────────────────────────────────
-    # Groups are always exactly 3 surfaces per (parcel_id, view).
-    # Within-group stats identify which surface is the tampered outlier.
     for m in CONTEXT_METRICS:
         g = df.groupby(['parcel_id', 'view'])[m]
         df[f'grp_mean_{m}'] = g.transform('mean')
@@ -80,9 +70,7 @@ def get_feature_columns(df: pd.DataFrame) -> list:
     return [c for c in df.columns if c not in meta]
 
 
-# ---------------------------------------------------------------------------
 # Evaluation helpers
-# ---------------------------------------------------------------------------
 
 def evaluate(model, X: np.ndarray, y: np.ndarray) -> dict:
     probs = model.predict_proba(X)[:, 1]
@@ -115,8 +103,6 @@ def evaluate_cv(df_raw: pd.DataFrame, params: dict, feat_cols: list,
         tr_mask = group_key.isin(tr_groups).values
         te_mask = group_key.isin(te_groups).values
 
-        # Re-engineer features from scratch within each split so context
-        # features (group mean/std/rank) are computed only from same-split rows
         df_tr = engineer_features(df_raw[tr_mask].reset_index(drop=True))
         df_te = engineer_features(df_raw[te_mask].reset_index(drop=True))
 
@@ -146,14 +132,12 @@ def print_results(label: str, metrics: dict, baseline_acc: float = 0.8166):
     print(f"\n    vs baseline ({baseline_acc:.4f}): {arrow} {abs(delta)*100:+.2f} pp")
     target = 0.85
     if acc_val >= target:
-        print(f"    Target (85%): ✓ REACHED  ({acc_val*100:.2f}%)")
+        print(f"    Target (85%):  REACHED  ({acc_val*100:.2f}%)")
     else:
-        print(f"    Target (85%): ✗ gap = {(target - acc_val)*100:.2f} pp")
+        print(f"    Target (85%):  gap = {(target - acc_val)*100:.2f} pp")
 
 
-# ---------------------------------------------------------------------------
 # Data loading
-# ---------------------------------------------------------------------------
 
 def load_simsac(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
@@ -168,9 +152,7 @@ def load_simsac(csv_path: str) -> pd.DataFrame:
     return df
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -189,13 +171,13 @@ def main():
     parser.add_argument('--random_state', type=int, default=42)
     args = parser.parse_args()
 
-    # ── Load ─────────────────────────────────────────────────────────────────
+    #  Load 
     print(f"\nLoading adversarial simscores: {args.csv}")
     df_adv = load_simsac(args.csv)
     n, n_t, n_c = len(df_adv), df_adv['tampered'].sum(), (df_adv['tampered']==0).sum()
     print(f"  {n} rows  (tampered={n_t}, clean={n_c})")
 
-    # ── Feature engineering ───────────────────────────────────────────────────
+    #  Feature engineering 
     print("\nEngineering features …")
     df_fe = engineer_features(df_adv)
     feat_cols = get_feature_columns(df_fe)
@@ -208,30 +190,27 @@ def main():
 
     BASELINE_ACC = 0.8166
 
-    print("EVALUATION METHOD: train on full dataset → evaluate on same")
+    print("EVALUATION METHOD: train on full dataset  evaluate on same")
     print("(matches existing comparison_results CSV methodology)")
 
-    # ── Baseline replication ──────────────────────────────────────────────────
+    #  Baseline replication 
     m_base = XGBClassifier(**BASELINE_PARAMS)
     m_base.fit(X_raw, y)
     r_base = evaluate(m_base, X_raw, y)
     print_results("Baseline — raw 5 features, same params (replication)", r_base, BASELINE_ACC)
 
-    # ── v2: same params, engineered features ─────────────────────────────────
+    #  v2: same params, engineered features 
     m_same = XGBClassifier(**BASELINE_PARAMS)
     m_same.fit(X, y)
     r_same = evaluate(m_same, X, y)
     print_results("v2 — 44 engineered features, same params (100 trees)", r_same, BASELINE_ACC)
 
-    # ── v2: tuned params, engineered features ────────────────────────────────
+    #  v2: tuned params, engineered features 
     m_tuned = XGBClassifier(**TUNED_PARAMS)
     m_tuned.fit(X, y)
     r_tuned = evaluate(m_tuned, X, y)
     print_results("v2 — 44 engineered features, tuned (600 trees)", r_tuned, BASELINE_ACC)
 
-    # ── CV experiment (group-aware, fair generalization estimate) ─────────────
-    # Group-aware CV keeps all surfaces of same (parcel_id, view) in the same fold.
-    # Context features are re-computed within each fold so there is no leakage.
     print(f"CROSS-VALIDATION ({args.n_splits}-fold group-aware) — generalization estimate")
     print(f"  Groups: unique (parcel_id, view) pairs kept together in each fold")
 
@@ -255,7 +234,7 @@ def main():
     r_cv_tuned = evaluate_cv(df_adv, TUNED_PARAMS, feat_cols, args.n_splits)
     print_results("v2 CV (44 features, tuned, group-aware)", r_cv_tuned, BASELINE_ACC)
 
-    # ── Adversarial training (optional) ──────────────────────────────────────
+    #  Adversarial training (optional) 
     r_adv_train = None
     if args.clean_csv:
         print("ADVERSARIAL TRAINING — train on clean+adv, test on adv")
@@ -275,14 +254,14 @@ def main():
         r_adv_train = evaluate(m_at, X_comb[adv_mask], y_comb[adv_mask])
         print_results("v2 adversarial training (test on adv portion)", r_adv_train, BASELINE_ACC)
 
-    # ── Feature importance ────────────────────────────────────────────────────
+    #  Feature importance 
     print("TOP-15 FEATURE IMPORTANCE (tuned model, full-data fit):")
     imp = dict(zip(feat_cols, m_tuned.feature_importances_))
     for feat, score in sorted(imp.items(), key=lambda x: -x[1])[:15]:
         bar = '█' * int(score * 300)
         print(f"  {feat:<30s} {score:.4f}  {bar}")
 
-    # ── Save CSV ──────────────────────────────────────────────────────────────
+    #  Save CSV 
     rows = [
         _row('baseline_5feat_100trees',    r_base),
         _row('v2_44feat_100trees',         r_same),
@@ -295,9 +274,9 @@ def main():
         rows.append(_row('v2_adv_training_test_on_adv', r_adv_train))
     out = pd.DataFrame(rows)
     out.to_csv(args.output_csv, index=False)
-    print(f"\n✓ Results saved → {args.output_csv}")
+    print(f"\n Results saved  {args.output_csv}")
 
-    # ── Summary ───────────────────────────────────────────────────────────────
+    #  Summary 
     print("SUMMARY (accuracy, matching comparison_results methodology):")
     print(f"  Existing baseline (comparison_results CSV): 81.66%")
     print(f"  v2 same params   (44 feat, 100 trees)    : {r_same['accuracy']*100:.2f}%")

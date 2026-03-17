@@ -82,7 +82,7 @@ def compute_similarities(model, dataloader, device):
     negative_labels = []
     negative_tampering_codes = []
 
-    print("\nComputing similarities...")
+    print("\nComputing similarities")
     with torch.no_grad():
         for batch in tqdm(dataloader):
             anchor = batch['anchor'].to(device)
@@ -98,8 +98,6 @@ def compute_similarities(model, dataloader, device):
             # Get embeddings for anchor-negative
             anchor_neg_emb, neg_logits = model(anchor, negative, anchor_256, negative_256)
 
-            # Compute cosine similarity
-            # Since embeddings are L2-normalized, cosine similarity = dot product
             batch_size = anchor.size(0)
 
             # For positive pairs (should be high similarity)
@@ -201,7 +199,7 @@ def plot_similarity_distribution(pos_sim, neg_sim, neg_labels, output_path):
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"\n✓ Saved similarity distribution plot to {output_path}")
+    print(f"\n Saved similarity distribution plot to {output_path}")
 
     # Print summary
     print("SIMILARITY SUMMARY")
@@ -209,7 +207,7 @@ def plot_similarity_distribution(pos_sim, neg_sim, neg_labels, output_path):
     print(f"Negative pairs (Clean vs Tampered): {neg_sim.mean():.4f} ± {neg_sim.std():.4f}")
     print(f"Separation gap: {pos_sim.mean() - neg_sim.mean():.4f}")
     print(f"\nDesired: Positive ~0.9, Negative ~0.2, Gap ~0.7")
-    print(f"Actual gap: {'GOOD ✓' if pos_sim.mean() - neg_sim.mean() > 0.5 else 'POOR ✗'}")
+    print(f"Actual gap: {'GOOD ' if pos_sim.mean() - neg_sim.mean() > 0.5 else 'POOR '}")
 
 
 def main():
@@ -238,7 +236,7 @@ def main():
     print(f"Using device: {device}")
 
     # Load model
-    print("\nLoading model...")
+    print("\nLoading model")
     model = create_multitask_model(
         simsac_checkpoint=None,
         freeze_simsac=False,
@@ -248,12 +246,12 @@ def main():
     checkpoint = torch.load(args.checkpoint, map_location=device)
     if 'full_model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['full_model_state_dict'], strict=False)
-        print("✓ Loaded full multi-task model")
+        print(" Loaded full multi-task model")
     else:
         print("Warning: Loading base SimSaC weights only")
 
     # Load dataset
-    print("\nLoading test data...")
+    print("\nLoading test data")
     dataset = TripletDataset(args.test_pairs, img_size=args.img_size)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
@@ -284,9 +282,9 @@ def main():
     json_path = output_dir / 'similarity_data.json'
     with open(json_path, 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"✓ Saved raw data to {json_path}")
+    print(f" Saved raw data to {json_path}")
 
-    print("✓ Visualization complete!")
+    print(" Visualization complete!")
 
 
 if __name__ == "__main__":

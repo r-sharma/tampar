@@ -63,12 +63,8 @@ class AdversarialUVMapGenerator:
         return adv_image
 
     def cw_attack(self, image, loss_fn, steps=100, c=1.0, kappa=0, learning_rate=0.01):
-        # Initialize perturbation in tanh space for automatic clamping
-        # w is optimized in unbounded space, tanh(w) maps to [0,1]
         w = torch.zeros_like(image, requires_grad=True, device=self.device)
 
-        # Initialize to original image in tanh space
-        # inverse tanh: atanh(2*x - 1) maps [0,1] -> unbounded
         w.data = torch.atanh(2 * image - 1)
 
         # Use Adam optimizer for smoother convergence
@@ -89,8 +85,6 @@ class AdversarialUVMapGenerator:
             # Compute L2 perturbation
             l2_perturbation = torch.norm(adv_image - image, p=2)
 
-            # C&W objective: minimize perturbation while maximizing adversarial loss
-            # Note: We negate adv_loss because we want to maximize it
             total_loss = l2_perturbation + c * (-adv_loss)
 
             total_loss.backward()
@@ -297,7 +291,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                 except Exception as e:
                     print(f"  Error generating {uvmap_path.name}: {e}")
 
-    print("✓ Adversarial dataset generation complete!")
+    print(" Adversarial dataset generation complete!")
     print(f"\nOutput directory: {output_dir}")
 
     # Print statistics

@@ -25,9 +25,7 @@ from simsac_contrastive_model import create_simsac_contrastive
 from src.simsac.models.our_models.SimSaC import SimSaC_Model
 
 
-# ---------------------------------------------------------------------------
 # SimSAC Change-Map Attack (same approach as generate_adversarial_simsac_targeted.py)
-# ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
     def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
@@ -77,11 +75,9 @@ def simsac_change_loss(simsac_model, field_img, reference_img):
 def compute_change_map_loss(simsac_model, img2_adv, img1, labels):
     loss_terms = []
     for i in range(img2_adv.shape[0]):
-        # Fresh forward pass through backbone (img2_adv is detached so
-        # gradient flows to backbone weights, not to the input pixels)
         change_mag = simsac_change_loss(simsac_model, img2_adv[i:i+1], img1[i:i+1])
         label_val = labels[i].item()
-        # Tampered → maximize (negate), Clean → minimize (keep positive)
+        # Tampered  maximize (negate), Clean  minimize (keep positive)
         signed_loss = -(2.0 * label_val - 1.0) * change_mag
         loss_terms.append(signed_loss)
 
@@ -153,11 +149,6 @@ class OnlineAttackGenerator:
         was_training = self.simsac.training
         self.simsac.train()
 
-        # Temporarily disable grad accumulation in backbone during attack.
-        # In Phase 2 (unfrozen backbone), each PGD backward() would otherwise
-        # accumulate backbone gradients meant for input perturbation — not model
-        # update — causing NaN when optimizer.step() applies them.
-        # Gradient still flows to the INPUT (field) because field.requires_grad=True.
         saved_grad_states = {n: p.requires_grad
                              for n, p in self.simsac.named_parameters()}
         for p in self.simsac.parameters():
@@ -180,9 +171,7 @@ class OnlineAttackGenerator:
         return adv
 
 
-# ---------------------------------------------------------------------------
 # Trainer with online adversarial generation + change map loss
-# ---------------------------------------------------------------------------
 
 class OnlineAdvTrainer:
 
@@ -292,9 +281,6 @@ class OnlineAdvTrainer:
                     total_loss_batch = total_loss_batch + adv_weight * loss_adv
                     total_adv += loss_adv.item()
 
-            # --- Change map loss (direct supervision of what predict_tampering uses) ---
-            # Only applied in Phase 2 (backbone unfrozen). img2_adv is detached so
-            # gradients flow to backbone weights, not to input pixels.
             if use_cm_loss and img2_adv is not None:
                 loss_cm = compute_change_map_loss(
                     self.attacker.simsac,
@@ -446,7 +432,7 @@ class OnlineAdvTrainer:
         if is_best:
             best_path = output_dir / f"phase{self.config['phase']}_best.pth"
             torch.save(checkpoint, best_path)
-            print(f"  ✓ New best model: {best_path}")
+            print(f"   New best model: {best_path}")
 
     def load_checkpoint(self, checkpoint_path):
         print(f"\nLoading checkpoint: {checkpoint_path}")
@@ -460,7 +446,7 @@ class OnlineAdvTrainer:
         self.history = ckpt.get('history', self.history)
         self.start_epoch = ckpt['epoch']
 
-        print(f"✓ Loaded. Resuming from epoch {self.start_epoch}, "
+        print(f" Loaded. Resuming from epoch {self.start_epoch}, "
               f"best val loss: {self.best_val_loss:.4f}")
 
     def _plot_progress(self, output_dir):
@@ -512,9 +498,7 @@ class OnlineAdvTrainer:
         print(f"  Progress plot saved.")
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -706,7 +690,7 @@ def main():
                 'train_loss_cm': [], 'val_loss': [], 'learning_rate': []
             }
             trainer.start_epoch = 0
-            print("✓ Phase 2: backbone unfrozen, scheduler and history reset")
+            print(" Phase 2: backbone unfrozen, scheduler and history reset")
 
     trainer.train(output_dir=args.output_dir)
 

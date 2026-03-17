@@ -28,9 +28,6 @@ class SimSaCContrastive(nn.Module):
         self.simsac = simsac_model
         self.freeze_backbone = freeze_backbone
         
-        # Determine backbone feature dimension
-        # For ResNet50, it's typically 2048
-        # We'll infer it from the model
         self.feature_dim = self._get_feature_dim()
         
         # Projection head
@@ -49,7 +46,7 @@ class SimSaCContrastive(nn.Module):
         return 512
     
     def _freeze_backbone(self):
-        print("Freezing backbone parameters...")
+        print("Freezing backbone parameters")
         
         # Freeze feature extraction backbone
         if hasattr(self.simsac, 'backbone'):
@@ -65,16 +62,16 @@ class SimSaCContrastive(nn.Module):
             for param in self.simsac.change_decoder.parameters():
                 param.requires_grad = False
         
-        print("✓ Backbone frozen")
+        print(" Backbone frozen")
     
     def unfreeze_all(self):
-        print("Unfreezing all parameters...")
+        print("Unfreezing all parameters")
         
         for param in self.simsac.parameters():
             param.requires_grad = True
         
         self.freeze_backbone = False
-        print("✓ All parameters unfrozen")
+        print(" All parameters unfrozen")
     
     def extract_features(self, img):
         # SimSaC uses a pyramid for feature extraction
@@ -168,11 +165,11 @@ def load_simsac_pretrained(weights_path, device='cuda'):
         simsac = simsac.to(device)
         simsac.eval()
         
-        print("✓ SimSaC loaded successfully")
+        print(" SimSaC loaded successfully")
         return simsac
         
     except Exception as e:
-        print(f"✗ Error loading SimSaC: {e}")
+        print(f" Error loading SimSaC: {e}")
         print("\nPlease adjust the import path and loading logic")
         print("based on your TAMPAR repository structure.")
         import traceback
@@ -246,4 +243,4 @@ if __name__ == "__main__":
     
     model.print_trainable_params()
     
-    print(f"\n✓ Model test passed!")
+    print(f"\n Model test passed!")

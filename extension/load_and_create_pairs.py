@@ -38,7 +38,7 @@ class TAMPARDatasetLoader:
         print("\nDirectories found:")
         for item in sorted(self.data_root.iterdir()):
             if item.is_dir():
-                print(f"  📁 {item.name}/")
+                print(f"   {item.name}/")
                 # Count files in directory
                 num_files = len(list(item.glob('*.*')))
                 print(f"      {num_files} files")
@@ -51,19 +51,19 @@ class TAMPARDatasetLoader:
         # Check for UV maps
         if self.uvmaps_dir.exists():
             uv_files = list(self.uvmaps_dir.glob('*.png'))
-            print(f"\n✓ Found {len(uv_files)} reference UV maps in uvmaps/")
+            print(f"\n Found {len(uv_files)} reference UV maps in uvmaps/")
             if uv_files:
                 print(f"  Examples:")
                 for f in uv_files[:3]:
                     print(f"    - {f.name}")
         else:
-            print(f"\n✗ No uvmaps/ directory found")
+            print(f"\n No uvmaps/ directory found")
         
         # Check for test/validation splits
         for split in ['test', 'validation']:
             split_dir = self.data_root / split
             if split_dir.exists():
-                print(f"\n✓ Found {split}/ directory")
+                print(f"\n Found {split}/ directory")
                 
                 # Check if files are directly in split dir or in background subdirs
                 direct_files = list(split_dir.glob('*.png'))
@@ -86,7 +86,7 @@ class TAMPARDatasetLoader:
                         uv_pred_files = list(bg.glob('*_uvmap_pred.png'))
                         print(f"    {bg.name}: {len(uv_pred_files)} UV maps")
             else:
-                print(f"\n✗ No {split}/ directory found")
+                print(f"\n No {split}/ directory found")
         
         # Check for metadata (handle different naming)
         metadata_patterns = [
@@ -101,7 +101,7 @@ class TAMPARDatasetLoader:
             if metadata_path.exists():
                 with open(metadata_path, 'r') as f:
                     data = json.load(f)
-                print(f"\n✓ Found {metadata_file}")
+                print(f"\n Found {metadata_file}")
                 if isinstance(data, list):
                     print(f"  Entries: {len(data)}")
                 elif isinstance(data, dict):
@@ -111,7 +111,7 @@ class TAMPARDatasetLoader:
         print("Loading Reference UV Maps")
         
         if not self.uvmaps_dir.exists():
-            print("✗ uvmaps/ directory not found")
+            print(" uvmaps/ directory not found")
             return {}
         
         uv_maps = {}
@@ -130,9 +130,9 @@ class TAMPARDatasetLoader:
                     'filename': uv_file.name
                 }
             except Exception as e:
-                print(f"\n✗ Error loading {uv_file}: {e}")
+                print(f"\n Error loading {uv_file}: {e}")
         
-        print(f"\n✓ Loaded {len(uv_maps)} reference UV maps")
+        print(f"\n Loaded {len(uv_maps)} reference UV maps")
         if uv_maps:
             # Show all examples
             print(f"  Parcel IDs found:")
@@ -147,7 +147,7 @@ class TAMPARDatasetLoader:
         
         split_dir = self.data_root / split
         if not split_dir.exists():
-            print(f"✗ {split}/ directory not found")
+            print(f" {split}/ directory not found")
             return {}
         
         uv_data = defaultdict(lambda: defaultdict(list))
@@ -165,7 +165,7 @@ class TAMPARDatasetLoader:
             print(f"Detected full dataset structure (backgrounds)")
             self._load_background_structure(split_dir, subdirs, uv_data)
         else:
-            print(f"✗ No UV map files found in {split_dir}")
+            print(f" No UV map files found in {split_dir}")
         
         # Convert defaultdict to regular dict
         uv_data = {k: dict(v) for k, v in uv_data.items()}
@@ -194,8 +194,6 @@ class TAMPARDatasetLoader:
         
         # Process predicted UV maps
         for uv_file in tqdm(uv_pred_files, desc="  Loading predicted UVs"):
-            # Parse filename: id_01_20230516_142710_uvmap_pred.png
-            # Extract parcel_id: id_01
             filename = uv_file.stem.replace('_uvmap_pred', '')
             parts = filename.split('_')
             
@@ -215,7 +213,7 @@ class TAMPARDatasetLoader:
                         'size': uv_map.size
                     })
                 except Exception as e:
-                    print(f"\n✗ Error loading {uv_file}: {e}")
+                    print(f"\n Error loading {uv_file}: {e}")
         
         # Process ground truth UV maps
         for uv_file in tqdm(uv_gt_files, desc="  Loading GT UVs"):
@@ -237,13 +235,13 @@ class TAMPARDatasetLoader:
                         'size': uv_map.size
                     })
                 except Exception as e:
-                    print(f"\n✗ Error loading {uv_file}: {e}")
+                    print(f"\n Error loading {uv_file}: {e}")
     
     def _load_background_structure(self, split_dir, subdirs, uv_data):
         print(f"Found {len(subdirs)} background(s): {[b.name for b in subdirs]}")
         
         for background in subdirs:
-            print(f"\nProcessing {background.name}...")
+            print(f"\nProcessing {background.name}")
             
             uv_pred_files = sorted(background.glob('*_uvmap_pred.png'))
             uv_gt_files = sorted(background.glob('*_uvmap_gt.png'))
@@ -273,9 +271,9 @@ class TAMPARDatasetLoader:
                             'size': uv_map.size
                         })
                     except Exception as e:
-                        print(f"\n✗ Error loading {uv_file}: {e}")
+                        print(f"\n Error loading {uv_file}: {e}")
             
-            # Similar for GT files...
+            # Similar for GT files
             for uv_file in uv_gt_files:
                 parts = uv_file.stem.split('_')
                 if len(parts) >= 3:
@@ -289,7 +287,7 @@ class TAMPARDatasetLoader:
                             'size': uv_map.size
                         })
                     except Exception as e:
-                        print(f"\n✗ Error loading {uv_file}: {e}")
+                        print(f"\n Error loading {uv_file}: {e}")
     
     def visualize_samples(self, num_samples=None):
         
@@ -301,7 +299,7 @@ class TAMPARDatasetLoader:
             else:
                 num_samples = min(num_samples, total_parcels)
         else:
-            print("✗ No reference UV maps to visualize")
+            print(" No reference UV maps to visualize")
             return
         
         print(f"Visualizing {num_samples} UV Maps (Total available: {total_parcels})")
@@ -320,8 +318,6 @@ class TAMPARDatasetLoader:
             axes[idx, 0].set_title(f"{parcel_id}\nReference UV\n{ref_uv.size}")
             axes[idx, 0].axis('off')
             
-            # Try to match with validation data
-            # For sample dataset: id_01_uvmap -> match with id_01
             split_key = 'validation' if 'validation' in self.uv_maps else 'test'
             
             # Find matching parcel in split data
@@ -369,7 +365,7 @@ class TAMPARDatasetLoader:
         plt.tight_layout()
         output_path = self.data_root / 'sample_uvmaps_visualization_all.png'
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"\n✓ Visualization saved to: {output_path}")
+        print(f"\n Visualization saved to: {output_path}")
         plt.close()
         
         return str(output_path)
@@ -434,21 +430,21 @@ class ContrastivePairCreator:
         
         # Strategy 1: Same parcel, different captures
         if 'same_parcel' in strategies:
-            print("\n1. Same parcel, different captures...")
+            print("\n1. Same parcel, different captures")
             pairs = self._create_same_parcel_pairs(split)
             positive_pairs.extend(pairs)
             print(f"   Created {len(pairs)} pairs")
         
         # Strategy 2: Reference vs Predicted
         if 'ref_vs_pred' in strategies:
-            print("\n2. Reference vs Predicted UV...")
+            print("\n2. Reference vs Predicted UV")
             pairs = self._create_ref_vs_pred_pairs(split)
             positive_pairs.extend(pairs)
             print(f"   Created {len(pairs)} pairs")
         
         # Strategy 3: Augmented pairs
         if 'augmented' in strategies:
-            print("\n3. Original vs Augmented...")
+            print("\n3. Original vs Augmented")
             pairs = self._create_augmented_pairs(split, num_variants=2)
             positive_pairs.extend(pairs)
             print(f"   Created {len(pairs)} pairs")
@@ -459,7 +455,7 @@ class ContrastivePairCreator:
         
         self.positive_pairs = positive_pairs
         
-        print(f"\n✓ Total positive pairs created: {len(positive_pairs)}")
+        print(f"\n Total positive pairs created: {len(positive_pairs)}")
         return positive_pairs
     
     def _create_same_parcel_pairs(self, split):
@@ -503,8 +499,6 @@ class ContrastivePairCreator:
             if 'predicted' not in split_data:
                 continue
             
-            # Find matching reference UV
-            # For sample dataset: split parcel_id="id_01" matches ref="id_01_uvmap"
             matched_ref = None
             for ref_id in self.loader.uv_maps['reference'].keys():
                 if parcel_id in ref_id or ref_id.replace('_uvmap', '') == parcel_id:
@@ -571,20 +565,20 @@ class ContrastivePairCreator:
         
         # Strategy 1: Different parcels
         if 'different_parcels' in strategies:
-            print("\n1. Different parcels...")
+            print("\n1. Different parcels")
             pairs = self._create_different_parcel_pairs(split, num_pairs)
             negative_pairs.extend(pairs)
             print(f"   Created {len(pairs)} pairs")
         
         # Strategy 2: Clean vs Tampered (if tampering data available)
         if 'clean_vs_tampered' in strategies:
-            print("\n2. Clean vs Tampered...")
+            print("\n2. Clean vs Tampered")
             # TODO: Implement if tampering_mapping.csv is available
             print("   (Skipped - tampering data not available in sample)")
         
         self.negative_pairs = negative_pairs
         
-        print(f"\n✓ Total negative pairs created: {len(negative_pairs)}")
+        print(f"\n Total negative pairs created: {len(negative_pairs)}")
         return negative_pairs
     
     def _create_different_parcel_pairs(self, split, num_pairs):
@@ -597,7 +591,7 @@ class ContrastivePairCreator:
         parcel_ids = list(self.loader.uv_maps[split].keys())
         
         if len(parcel_ids) < 2:
-            print("   ✗ Need at least 2 parcels for negative pairs")
+            print("    Need at least 2 parcels for negative pairs")
             return pairs
         
         # Create random pairs of different parcels
@@ -693,7 +687,7 @@ class ContrastivePairCreator:
             plt.tight_layout()
             pos_path = Path(output_dir) / 'positive_pairs_examples.png'
             plt.savefig(pos_path, dpi=150, bbox_inches='tight')
-            print(f"✓ Positive pairs visualization: {pos_path}")
+            print(f" Positive pairs visualization: {pos_path}")
             plt.close()
         
         # Visualize negative pairs
@@ -731,7 +725,7 @@ class ContrastivePairCreator:
             plt.tight_layout()
             neg_path = Path(output_dir) / 'negative_pairs_examples.png'
             plt.savefig(neg_path, dpi=150, bbox_inches='tight')
-            print(f"✓ Negative pairs visualization: {neg_path}")
+            print(f" Negative pairs visualization: {neg_path}")
             plt.close()
     
     def save_pairs(self, output_dir, train_split=0.8):
@@ -763,11 +757,11 @@ class ContrastivePairCreator:
         
         with open(train_path, 'wb') as f:
             pickle.dump(train_pairs, f)
-        print(f"\n✓ Saved train pairs: {train_path}")
+        print(f"\n Saved train pairs: {train_path}")
         
         with open(val_path, 'wb') as f:
             pickle.dump(val_pairs, f)
-        print(f"✓ Saved val pairs: {val_path}")
+        print(f" Saved val pairs: {val_path}")
         
         # Save summary
         summary = {
@@ -782,7 +776,7 @@ class ContrastivePairCreator:
         summary_path = output_dir / 'dataset_summary.json'
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2)
-        print(f"✓ Saved summary: {summary_path}")
+        print(f" Saved summary: {summary_path}")
         
         return train_path, val_path
 
@@ -915,12 +909,12 @@ def main():
             train_split=0.8
         )
         
-        print("✓ Pair Creation Complete!")
+        print(" Pair Creation Complete!")
         print(f"\nDataset saved:")
         print(f"  Train: {train_path}")
         print(f"  Val: {val_path}")
     
-    print("✓ All Tasks Complete!")
+    print(" All Tasks Complete!")
     print(f"\nData loaded:")
     print(f"  Reference UV maps: {len(loader.uv_maps.get('reference', {}))}")
     if args.split in loader.uv_maps:

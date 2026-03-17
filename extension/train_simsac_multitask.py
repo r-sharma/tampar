@@ -168,8 +168,6 @@ class TripletLoss(nn.Module):
         losses = F.relu(self.margin + pos_dist - neg_dist)
 
         if self.mining == 'hard':
-            # Hard negative mining: focus on hardest examples
-            # Only keep triplets where loss > 0 (violating margin)
             hard_losses = losses[losses > 0]
             if len(hard_losses) > 0:
                 return hard_losses.mean()
@@ -284,8 +282,6 @@ class MultiTaskTrainer:
             anchor_label = batch['anchor_label'].to(self.device)
             negative_label = batch['negative_label'].to(self.device)
 
-            # Forward pass - we need to process each image separately since SimSaC expects pairs
-            # For triplet learning, we compare anchor-positive and anchor-negative
 
             # Anchor-Positive embeddings
             anchor_pos_emb, anchor_logits = self.model(
@@ -297,13 +293,7 @@ class MultiTaskTrainer:
                 anchor, negative, anchor_256, negative_256
             )
 
-            # For triplet loss, we need embeddings of individual images
-            # We'll use the embeddings from anchor-positive for anchor and positive
-            # And embeddings from anchor-negative for anchor and negative
-            # This is approximate but works for contrastive learning
 
-            # Compute triplet loss
-            # We approximate by using the pairwise embeddings
             triplet_loss = self.triplet_loss_fn(
                 anchor_pos_emb,
                 anchor_pos_emb,
@@ -518,7 +508,7 @@ class MultiTaskTrainer:
         if is_best:
             best_path = self.output_dir / 'best_model.pth'
             torch.save(checkpoint, best_path)
-            print(f"  ✓ Saved best model (loss: {self.best_loss:.4f})")
+            print(f"   Saved best model (loss: {self.best_loss:.4f})")
 
     def save_history(self):
         history_path = self.output_dir / 'training_history.json'
@@ -580,7 +570,7 @@ def main():
     print(f"Using device: {device}")
 
     # Create model
-    print("\nCreating multi-task model...")
+    print("\nCreating multi-task model")
     model = create_multitask_model(
         simsac_checkpoint=args.simsac_checkpoint,
         freeze_simsac=args.freeze_simsac,
@@ -590,7 +580,7 @@ def main():
     )
 
     # Create datasets
-    print("\nLoading triplet data...")
+    print("\nLoading triplet data")
     triplet_dataset = TripletDataset(
         args.triplet_pairs,
         img_size=args.img_size
@@ -605,7 +595,7 @@ def main():
 
     quadruplet_loader = None
     if args.quadruplet_pairs:
-        print("Loading quadruplet data...")
+        print("Loading quadruplet data")
         quadruplet_dataset = QuadrupletDataset(
             args.quadruplet_pairs,
             img_size=args.img_size

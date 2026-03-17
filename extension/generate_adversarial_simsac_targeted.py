@@ -24,8 +24,6 @@ class SimSaCTargetedAttackGenerator:
 
     def __init__(self, simsac_model, epsilon=0.1, device='cuda'):
         self.simsac = simsac_model
-        # Keep in train mode to allow gradients to flow
-        # SimSAC has internal no_grad() in eval mode which blocks gradients
         self.simsac.train()
         self.epsilon = epsilon
         self.device = device
@@ -37,23 +35,14 @@ class SimSaCTargetedAttackGenerator:
         field_256 = F.interpolate(field_img, size=(256, 256), mode='bilinear', align_corners=False)
         reference_256 = F.interpolate(reference_img, size=(256, 256), mode='bilinear', align_corners=False)
 
-        # Forward through SimSAC
-        # Model is in train mode to allow gradients
         output = self.simsac(field_512, reference_512, field_256, reference_256)
 
-        # Extract CHANGE/CORRELATION output (not flow!)
-        # Train mode: dict with {"flow": ..., "change": ([change4, change3], [change2, change1])}
-        # Eval mode: tuple (flow1, change1)
         change = None
 
         if isinstance(output, dict):
             # Train mode - nested structure
             change_tuple = output.get('change', None)
             if change_tuple is not None and isinstance(change_tuple, tuple) and len(change_tuple) == 2:
-                # change_tuple could be:
-                # - Full model: ([change4, change3], [change2, change1])
-                # - Monkey-patched: ([change4], [change4])
-                # Get the finest resolution change map available
                 if len(change_tuple[1]) > 0:
                     # Get last element from second tuple (finest resolution)
                     change = change_tuple[1][-1]
@@ -72,13 +61,8 @@ class SimSaCTargetedAttackGenerator:
         if change is None:
             raise ValueError(f"SimSAC did not return change output. Got: {type(output)}, keys: {output.keys() if isinstance(output, dict) else 'N/A'}")
 
-        # The change map has 2 channels representing correspondence confidence
-        # We want to MINIMIZE the change magnitude to hide tampering
-        # (Make tampered images have low change = look clean)
         change_magnitude = torch.sqrt(change[:, 0]**2 + change[:, 1]**2)
 
-        # Loss: POSITIVE change magnitude (minimize change = hide tampering)
-        # By minimizing this loss, we minimize the change output
         loss = change_magnitude.mean()
 
         return loss
@@ -150,8 +134,6 @@ class SimSaCTargetedAttackGenerator:
         field_tensor = field_tensor.unsqueeze(0).to(self.device)
         reference_tensor = reference_tensor.unsqueeze(0).to(self.device)
 
-        # Generate adversarial image
-        # Note: model is already in train mode from __init__
 
         if attack_type == 'fgsm':
             adv_field = self.fgsm_attack_simsac(field_tensor, reference_tensor)
@@ -168,7 +150,7 @@ class SimSaCTargetedAttackGenerator:
 
 
 def load_simsac_model(checkpoint_path, device='cuda'):
-    print(f"Loading SimSAC model from {checkpoint_path}...")
+    print(f"Loading SimSAC model from {checkpoint_path}")
 
     model = SimSaC_Model(
         evaluation=False,
@@ -190,10 +172,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
 
     model.train()
 
-    # CRITICAL FIX: Monkey-patch to remove no_grad() wrapper
-    # SimSAC has hardcoded torch.no_grad() in forward_sigle_ref which blocks gradients
-    # We need to temporarily disable it for adversarial attacks
-    print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)...")
+    print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)")
 
     # Store original forward method
     original_forward_single = model.forward_sigle_ref
@@ -218,9 +197,6 @@ def load_simsac_model(checkpoint_path, device='cuda'):
         c14 = im1_pyr_256[-3]
         c24 = im2_pyr_256[-3]
 
-        # Continue with rest of forward pass
-        # (Call original method's logic but with gradient-enabled features)
-        # For simplicity, just compute at coarsest level
         flow4, corr4 = self.coarsest_resolution_flow(c14, c24, h_256=256, w_256=256, return_corr=True)
 
         # Return in training mode format
@@ -233,7 +209,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     import types
     model.forward_sigle_ref = types.MethodType(forward_with_grad, model)
 
-    print("✓ SimSAC model loaded with gradient flow enabled")
+    print(" SimSAC model loaded with gradient flow enabled")
 
     return model
 
@@ -349,7 +325,7 @@ def generate_adversarial_dataset(data_dir, uvmaps_dir, output_dir, simsac_checkp
                 except Exception as e:
                     print(f"    Error processing {field_path.name}: {e}")
 
-    print("✓ SimSAC-targeted adversarial generation complete!")
+    print(" SimSAC-targeted adversarial generation complete!")
     print(f"Total adversarial UV maps generated: {total_uvmaps}")
 
 

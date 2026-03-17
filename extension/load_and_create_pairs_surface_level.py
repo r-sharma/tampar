@@ -29,7 +29,7 @@ class TamperingMapping:
         self.surface_names = ['center', 'top', 'bottom', 'left', 'right']
 
         if not Path(csv_path).exists():
-            print(f"⚠ Warning: tampering_mapping.csv not found at {csv_path}")
+            print(f" Warning: tampering_mapping.csv not found at {csv_path}")
             return
 
         with open(csv_path, 'r') as f:
@@ -44,7 +44,7 @@ class TamperingMapping:
                     'right': row['right'].strip()
                 }
 
-        print(f"✓ Loaded tampering mapping for {len(self.mapping)} parcels")
+        print(f" Loaded tampering mapping for {len(self.mapping)} parcels")
 
     def is_surface_tampered(self, parcel_id, surface_name):
         if parcel_id not in self.mapping:
@@ -146,8 +146,6 @@ class SurfaceLevelPairCreator:
         self.data_root = Path(data_root)
         self.adversarial_root = Path(adversarial_root) if adversarial_root else None
 
-        # Check if data_root ends with a split name (validation/test)
-        # If so, get parent directory for uvmaps
         if self.data_root.name in ['validation', 'test']:
             self.uvmaps_dir = self.data_root.parent / 'uvmaps'
         else:
@@ -182,7 +180,7 @@ class SurfaceLevelPairCreator:
 
         # Load reference UV maps from uvmaps/ folder
         if self.uvmaps_dir.exists():
-            print("\nLoading reference UV maps...")
+            print("\nLoading reference UV maps")
             ref_files = sorted(self.uvmaps_dir.glob('id_*_uvmap.png'))
 
             for ref_file in tqdm(ref_files, desc="Reference UVs"):
@@ -196,24 +194,16 @@ class SurfaceLevelPairCreator:
 
                 data['reference'][parcel_id] = surfaces
 
-            print(f"✓ Loaded {len(data['reference'])} reference UV maps")
+            print(f" Loaded {len(data['reference'])} reference UV maps")
 
-        # Load split UV maps
-        # If data_root already points to a split directory, use it directly
         if self.data_root.name == split:
             split_dir = self.data_root
         else:
             split_dir = self.data_root / split
 
         if split_dir.exists():
-            print(f"\nLoading {split} UV maps...")
+            print(f"\nLoading {split} UV maps")
 
-            # Find all UV map files recursively (both _gt and _pred)
-            # Search in background subfolders (carpet, gravel, table, etc.)
-            # This will match both normal and adversarial UV maps:
-            # - carpet/id_01_20230516_142710_uvmap_gt.png (normal)
-            # - carpet/id_01_20230516_142710_fgsm_uvmap_gt.png (adversarial)
-            # - table/id_01_20230516_142710_pgd_uvmap_pred.png (adversarial)
             uv_files = list(split_dir.glob('**/id_*_uvmap_gt.png')) + \
                       list(split_dir.glob('**/id_*_uvmap_pred.png'))
 
@@ -255,13 +245,10 @@ class SurfaceLevelPairCreator:
                     'is_adversarial': False
                 })
 
-            print(f"✓ Loaded UV maps for {len(data[split])} parcels in {split}")
+            print(f" Loaded UV maps for {len(data[split])} parcels in {split}")
 
         # Load adversarial UV maps from separate path (if provided)
         if self.adversarial_root is not None:
-            # If adversarial_root already contains adversarial subfolders (like carpet_adv_fgsm),
-            # use it directly; otherwise append split name
-            # Check if any subdirectory has 'adv' in its name
             has_adv_subdirs = any('adv' in d.name.lower() for d in self.adversarial_root.iterdir() if d.is_dir())
 
             if has_adv_subdirs:
@@ -272,10 +259,8 @@ class SurfaceLevelPairCreator:
                 adv_split_dir = self.adversarial_root / split
 
             if adv_split_dir.exists():
-                print(f"\nLoading ADVERSARIAL {split} UV maps...")
+                print(f"\nLoading ADVERSARIAL {split} UV maps")
 
-                # Find all adversarial UV map files recursively
-                # Search in background subfolders (carpet_adv_fgsm, carpet_adv_pgd, etc.)
                 adv_uv_files = list(adv_split_dir.glob('**/id_*_uvmap_gt.png')) + \
                               list(adv_split_dir.glob('**/id_*_uvmap_pred.png'))
 
@@ -328,7 +313,7 @@ class SurfaceLevelPairCreator:
                         'attack_type': attack_type
                     })
 
-                print(f"✓ Loaded adversarial UV maps for {len([p for p in data[split].keys() if any(c.get('is_adversarial', False) for c in data[split][p])])} parcels")
+                print(f" Loaded adversarial UV maps for {len([p for p in data[split].keys() if any(c.get('is_adversarial', False) for c in data[split][p])])} parcels")
 
         self.data = data
         return data
@@ -339,7 +324,7 @@ class SurfaceLevelPairCreator:
         pairs = []
 
         # Type 1: Clean reference vs clean uvmap_pred
-        print("\n1. Clean Reference vs Clean uvmap_pred...")
+        print("\n1. Clean Reference vs Clean uvmap_pred")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
@@ -380,7 +365,7 @@ class SurfaceLevelPairCreator:
         print(f"   Created {self.pair_stats['positive_ref_vs_pred']} pairs")
 
         # Type 2: Clean reference vs clean uvmap_gt
-        print("\n2. Clean Reference vs Clean uvmap_gt...")
+        print("\n2. Clean Reference vs Clean uvmap_gt")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
@@ -419,13 +404,11 @@ class SurfaceLevelPairCreator:
         print(f"   Created {self.pair_stats['positive_ref_vs_gt']} pairs")
 
         # Type 3: Clean reference vs augmented clean reference
-        print("\n3. Clean Reference vs Augmented Clean Reference...")
+        print("\n3. Clean Reference vs Augmented Clean Reference")
         num_augmented = 0
         num_variants = 2
 
         for parcel_id in self.data['reference'].keys():
-            # All reference surfaces are clean (no tampering in reference UV maps)
-            # But we only use surfaces that are ALSO clean in field images
             clean_surfaces = self.tampering_map.get_clean_surfaces(parcel_id)
 
             for surf_name in clean_surfaces:
@@ -456,7 +439,7 @@ class SurfaceLevelPairCreator:
         print(f"   Created {num_augmented} pairs")
 
         # Type 4: Clean reference vs adversarial clean surfaces
-        print("\n4. Clean Reference vs Adversarial Clean Surfaces...")
+        print("\n4. Clean Reference vs Adversarial Clean Surfaces")
         num_adv_clean = 0
 
         for parcel_id in self.data[split].keys():
@@ -476,9 +459,6 @@ class SurfaceLevelPairCreator:
 
                 ref_surface = self.data['reference'][parcel_id][surf_name]
 
-                # Pair with adversarial versions of CLEAN surfaces
-                # These should be POSITIVE because they're the same clean surface
-                # just with adversarial perturbations - we want the model to be robust
                 for adv_cap in adv_captures:
                     if surf_name not in adv_cap['surfaces']:
                         continue
@@ -503,7 +483,7 @@ class SurfaceLevelPairCreator:
         print(f"   Created {num_adv_clean} pairs")
 
         self.positive_pairs = pairs
-        print(f"\n✓ Total POSITIVE pairs: {len(pairs)}")
+        print(f"\n Total POSITIVE pairs: {len(pairs)}")
 
         return pairs
 
@@ -513,7 +493,7 @@ class SurfaceLevelPairCreator:
         pairs = []
 
         # Type 1: Clean reference vs tampered uvmap_gt
-        print("\n1. Clean Reference vs Tampered uvmap_gt...")
+        print("\n1. Clean Reference vs Tampered uvmap_gt")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
@@ -554,7 +534,7 @@ class SurfaceLevelPairCreator:
         print(f"   Created {self.pair_stats['negative_ref_vs_tampered_gt']} pairs")
 
         # Type 2: Clean reference vs tampered uvmap_pred
-        print("\n2. Clean Reference vs Tampered uvmap_pred...")
+        print("\n2. Clean Reference vs Tampered uvmap_pred")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
@@ -601,7 +581,7 @@ class SurfaceLevelPairCreator:
         print(f"   Created 0 pairs (moved to positive)")
 
         # Type 4: CLEAN reference vs adversarial (tampered surfaces)
-        print("\n4. CLEAN Reference vs Adversarial (Tampered Surfaces)...")
+        print("\n4. CLEAN Reference vs Adversarial (Tampered Surfaces)")
         for parcel_id in self.data[split].keys():
             if parcel_id not in self.data['reference']:
                 continue
@@ -643,62 +623,14 @@ class SurfaceLevelPairCreator:
 
         print(f"   Created {self.pair_stats['negative_ref_vs_adv_tampered']} pairs")
 
-        # Type 5: Different parcels - same surface type (DISABLED)
-        # print("\n5. Different Parcels - Same Surface Type...")
         diff_parcel_count = 0
 
-        # DISABLED: This creates pairs from different parcels which may confuse the model
-        # # Use reference UV maps for different parcel pairs
-        # ref_parcel_ids = list(self.data['reference'].keys())
-        #
-        # if len(ref_parcel_ids) >= 2:
-        #     # Target number of pairs to balance dataset
-        #     target_pairs = max(
-        #         self.pair_stats.get('negative_ref_vs_tampered_gt', 0),
-        #         self.pair_stats.get('negative_ref_vs_tampered_pred', 0),
-        #         self.pair_stats.get('negative_ref_vs_adv_clean', 0),
-        #         self.pair_stats.get('negative_ref_vs_adv_tampered', 0),
-        #         100  # minimum
-        #     )
-        #
-        #     attempts = 0
-        #     max_attempts = target_pairs * 10
-        #
-        #     while diff_parcel_count < target_pairs and attempts < max_attempts:
-        #         attempts += 1
-        #
-        #         # Select two different parcels
-        #         p1, p2 = random.sample(ref_parcel_ids, 2)
-        #
-        #         # Select a common surface type
-        #         surf_types = ['top', 'left', 'center', 'right', 'bottom']
-        #         surf_name = random.choice(surf_types)
-        #
-        #         # Check if both parcels have this surface in reference
-        #         if surf_name in self.data['reference'][p1] and \
-        #            surf_name in self.data['reference'][p2]:
-        #
-        #             pairs.append({
-        #                 'image1': self.data['reference'][p1][surf_name],
-        #                 'surface2': self.data['reference'][p2][surf_name],
-        #                 'label': 0,
-        #                 'pair_type': 'different_parcels_same_surface',
-        #                 'parcel_id': f"{p1}_vs_{p2}",
-        #                 'surface_name': surf_name,
-        #                 'metadata': {
-        #                     'parcel1': p1,
-        #                     'parcel2': p2,
-        #                     'file1': f"id_{p1:02d}_uvmap.png",
-        #                     'file2': f"id_{p2:02d}_uvmap.png"
-        #                 }
-        #             })
-        #             diff_parcel_count += 1
 
         self.pair_stats['negative_diff_parcels'] = diff_parcel_count
         # print(f"   Created {diff_parcel_count} pairs")  # Will always be 0 now
 
         self.negative_pairs = pairs
-        print(f"\n✓ Total NEGATIVE pairs: {len(pairs)}")
+        print(f"\n Total NEGATIVE pairs: {len(pairs)}")
 
         return pairs
 
@@ -710,7 +642,7 @@ class SurfaceLevelPairCreator:
         print(f"  Reference vs uvmap_gt (clean):       {self.pair_stats['positive_ref_vs_gt']:>6}")
         print(f"  Reference vs Augmented Reference:    {self.pair_stats['positive_augmented']:>6}")
         print(f"  Reference vs Adversarial (clean):    {self.pair_stats.get('positive_adv_clean', 0):>6}")
-        print(f"  {'─'*60}")
+        print(f"  {''*60}")
         print(f"  TOTAL POSITIVE:                      {len(self.positive_pairs):>6}")
 
         print("\n📊 NEGATIVE PAIRS:")
@@ -719,7 +651,7 @@ class SurfaceLevelPairCreator:
         print(f"  Reference vs Adversarial (clean):    {self.pair_stats['negative_ref_vs_adv_clean']:>6} [MOVED TO POSITIVE]")
         print(f"  Reference vs Adversarial (tampered): {self.pair_stats['negative_ref_vs_adv_tampered']:>6}")
         print(f"  Different Parcels - Same Surface:    {self.pair_stats['negative_diff_parcels']:>6}")
-        print(f"  {'─'*60}")
+        print(f"  {''*60}")
         print(f"  TOTAL NEGATIVE:                      {len(self.negative_pairs):>6}")
 
         print(f"\n{'═'*70}")
@@ -774,7 +706,7 @@ class SurfaceLevelPairCreator:
             neg_by_type[pair['pair_type']].append(pair)
 
         # Visualize each type
-        print(f"\nCreating visualizations...")
+        print(f"\nCreating visualizations")
 
         # Positive pairs
         for pair_type, pairs in pos_by_type.items():
@@ -790,7 +722,7 @@ class SurfaceLevelPairCreator:
                 max_pairs=max_pairs_per_type, is_positive=False
             )
 
-        print(f"\n✓ Visualizations saved to: {output_dir}")
+        print(f"\n Visualizations saved to: {output_dir}")
         return output_dir
 
     def _visualize_pair_type(self, pairs, pair_type, parcel_id, output_dir,
@@ -859,7 +791,7 @@ class SurfaceLevelPairCreator:
         plt.savefig(output_file, dpi=150, bbox_inches='tight')
         plt.close()
 
-        print(f"  ✓ {label_str}: {pair_type} ({num_pairs} pairs) -> {output_file.name}")
+        print(f"   {label_str}: {pair_type} ({num_pairs} pairs) -> {output_file.name}")
 
     def visualize_all_pairs_summary(self, output_dir=None, samples_per_type=3):
         if output_dir is None:
@@ -931,9 +863,9 @@ class SurfaceLevelPairCreator:
             plt.savefig(output_file, dpi=150, bbox_inches='tight')
             plt.close()
 
-            print(f"  ✓ {label_str}: {pair_type} -> {output_file.name}")
+            print(f"   {label_str}: {pair_type} -> {output_file.name}")
 
-        print(f"\n✓ Summary visualizations saved to: {output_dir}")
+        print(f"\n Summary visualizations saved to: {output_dir}")
         return output_dir
 
     def save_pairs(self, output_dir, train_split=0.8):
@@ -961,15 +893,15 @@ class SurfaceLevelPairCreator:
         with open(val_path, 'wb') as f:
             pickle.dump(val_pairs, f)
 
-        print(f"\n✓ Saved train pairs: {train_path}")
-        print(f"✓ Saved val pairs: {val_path}")
+        print(f"\n Saved train pairs: {train_path}")
+        print(f" Saved val pairs: {val_path}")
 
         # Save statistics
         stats = self.print_statistics()
         stats_path = output_dir / 'pair_statistics.json'
         with open(stats_path, 'w') as f:
             json.dump(stats, f, indent=2)
-        print(f"✓ Saved statistics: {stats_path}")
+        print(f" Saved statistics: {stats_path}")
 
         return train_path, val_path
 
@@ -1057,7 +989,7 @@ def main():
         print("Creating Summary Visualizations")
         creator.visualize_all_pairs_summary(samples_per_type=args.max_pairs_viz)
 
-    print("✓ Surface-Level Pair Creation Complete!")
+    print(" Surface-Level Pair Creation Complete!")
 
 
 if __name__ == "__main__":

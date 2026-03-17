@@ -19,11 +19,6 @@ from src.tampering.compare import METRICS, CompareType
 
 SPLIT_STRING = "___"
 
-# --------------------------------------------------------------------------- #
-# Curated candidate configs (quick mode, no GridSearchCV)
-# Designed to explore: lower depth (regularise), more trees, lower lr,
-# and different regularisation levels.
-# --------------------------------------------------------------------------- #
 CANDIDATE_CONFIGS = [
     # Baseline (current default in predictor.py)
     dict(n_estimators=100, max_depth=5, learning_rate=0.1,
@@ -94,9 +89,7 @@ GRID_SEARCH_PARAMS = {
 }
 
 
-# --------------------------------------------------------------------------- #
 # Data loading (mirrors predict_tampering_adversarial_eval.py)
-# --------------------------------------------------------------------------- #
 
 def load_results(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -162,9 +155,7 @@ def make_base_xgb(extra_params: dict | None = None) -> XGBClassifier:
     return XGBClassifier(**params)
 
 
-# --------------------------------------------------------------------------- #
 # Evaluation helpers
-# --------------------------------------------------------------------------- #
 
 def cv_accuracy(model, X, y, n_splits: int = 5) -> float:
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
@@ -178,9 +169,7 @@ def adv_accuracy(model, X_train, y_train, X_adv, y_adv) -> float:
     return float(accuracy_score(y_adv, preds))
 
 
-# --------------------------------------------------------------------------- #
 # Quick candidate search
-# --------------------------------------------------------------------------- #
 
 def candidate_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     print(f"Candidate Search  ({len(CANDIDATE_CONFIGS)} configs, {n_cv_splits}-fold CV on clean)")
@@ -200,16 +189,14 @@ def candidate_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     return df
 
 
-# --------------------------------------------------------------------------- #
 # GridSearchCV
-# --------------------------------------------------------------------------- #
 
 def grid_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     total = 1
     for v in GRID_SEARCH_PARAMS.values():
         total *= len(v)
     print(f"GridSearchCV  ({total} configurations, {n_cv_splits}-fold CV on clean)")
-    print("This may take a while...")
+    print("This may take a while")
 
     base = make_base_xgb()
     gs = GridSearchCV(
@@ -247,9 +234,7 @@ def grid_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     return best_params, best_cv, adv_acc
 
 
-# --------------------------------------------------------------------------- #
 # Main
-# --------------------------------------------------------------------------- #
 
 def main():
     parser = argparse.ArgumentParser(
@@ -281,7 +266,7 @@ def main():
     print(f"Compare type(s): {compare_types}")
 
     # Load data
-    print("\nLoading clean CSV...")
+    print("\nLoading clean CSV")
     df_clean_raw = load_results(Path(args.clean_csv))
     if args.exclude_base:
         df_clean_raw = df_clean_raw[~df_clean_raw["view"].str.contains("/base/")]
@@ -289,7 +274,7 @@ def main():
     df_clean = create_pivot(df_clean_raw)
     print(f"  {len(df_clean)} samples, {df_clean['tampered'].sum()} tampered")
 
-    print("\nLoading adversarial CSV...")
+    print("\nLoading adversarial CSV")
     df_adv_raw = load_results(Path(args.adversarial_csv))
     if args.exclude_base:
         base_mask = df_adv_raw["view"].str.contains("/base/")

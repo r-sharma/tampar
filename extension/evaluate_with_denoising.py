@@ -173,12 +173,10 @@ def process_adversarial_dataset(
     tampering_csv = Path("data/tampar_sample/tampering_mapping.csv")
     if tampering_csv.exists():
         df_tampering = pd.read_csv(tampering_csv)
-        # Merge tampering labels
-        # This requires matching logic based on your dataset structure
 
     # Save results
     df.to_csv(output_csv, index=False)
-    print(f"\n✓ Saved results to: {output_csv}")
+    print(f"\n Saved results to: {output_csv}")
     print(f"Total rows: {len(df)}")
 
 

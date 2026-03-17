@@ -101,7 +101,7 @@ class MultiTaskEvaluator:
         all_labels2 = []
         all_pair_types = []
 
-        print("\nExtracting features and predictions...")
+        print("\nExtracting features and predictions")
         for batch in tqdm(dataloader):
             img1 = batch['img1'].to(self.device)
             img1_256 = batch['img1_256'].to(self.device)
@@ -114,16 +114,12 @@ class MultiTaskEvaluator:
             # Forward pass
             embeddings, logits = self.model(img1, img2, img1_256, img2_256)
 
-            # Store results
-            # Note: embeddings are for the pair, we'll use them as embedding for img2
             all_embeddings2.append(embeddings.cpu().numpy())
             all_logits2.append(logits.cpu().numpy())
             all_labels1.append(label1)
             all_labels2.append(label2)
             all_pair_types.extend(batch['pair_type'])
 
-            # For img1 embeddings, we'd need to run model(img1, img1, ...)
-            # For simplicity, we'll skip individual embeddings and focus on pair metrics
 
         # Concatenate all batches
         all_embeddings2 = np.concatenate(all_embeddings2, axis=0)
@@ -135,7 +131,7 @@ class MultiTaskEvaluator:
         results = {}
 
         # 1. Classification metrics
-        print("\nComputing classification metrics...")
+        print("\nComputing classification metrics")
         pred_labels2 = np.argmax(all_logits2, axis=1)
 
         accuracy = accuracy_score(all_labels2, pred_labels2)
@@ -169,11 +165,8 @@ class MultiTaskEvaluator:
         cm = confusion_matrix(all_labels2, pred_labels2)
         results['confusion_matrix'] = cm.tolist()
 
-        # 2. Contrastive metrics (pair similarity)
-        # We can't compute cosine similarity between pairs without individual embeddings
-        # Instead, we'll report average logits and confidence
 
-        print("\nComputing contrastive metrics...")
+        print("\nComputing contrastive metrics")
 
         # Analyze by pair type (clean-clean, clean-tampered, tampered-tampered)
         pair_type_metrics = defaultdict(list)
@@ -299,7 +292,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load model
-    print("\nLoading multi-task model...")
+    print("\nLoading multi-task model")
     model = create_multitask_model(
         simsac_checkpoint=None,
         freeze_simsac=False,
@@ -315,7 +308,7 @@ def main():
     # Load full model state dict (includes all heads)
     if 'full_model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['full_model_state_dict'], strict=False)
-        print("  ✓ Loaded full multi-task model weights")
+        print("   Loaded full multi-task model weights")
     else:
         # Fall back to base SimSaC weights only
         simsac_state_dict = checkpoint['state_dict']
@@ -323,13 +316,13 @@ def main():
         for key, value in simsac_state_dict.items():
             wrapped_state_dict[f'simsac.{key}'] = value
         model.load_state_dict(wrapped_state_dict, strict=False)
-        print("  ✓ Loaded base SimSaC weights only (heads randomly initialized)")
+        print("   Loaded base SimSaC weights only (heads randomly initialized)")
 
     print(f"  Model trained for {checkpoint.get('epoch', '?')} epochs")
     print(f"  Best loss: {checkpoint.get('best_loss', '?')}")
 
     # Create dataset
-    print("\nLoading test data...")
+    print("\nLoading test data")
     test_dataset = EvaluationDataset(
         args.test_pairs,
         img_size=args.img_size
@@ -354,10 +347,10 @@ def main():
     results_path = output_dir / 'evaluation_results.json'
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"\n✓ Saved results to {results_path}")
+    print(f"\n Saved results to {results_path}")
 
     # Save classification report
-    print("\nGenerating detailed classification report...")
+    print("\nGenerating detailed classification report")
     # We'd need to re-run to get all predictions, for now just save what we have
 
     print("Evaluation Complete!")

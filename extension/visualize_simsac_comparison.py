@@ -38,12 +38,8 @@ def process_simsac_output(im1, im2, threshold=200, ckpt_path=None):
 
 
 def process_canny_output(im1, im2, threshold=200):
-    # Use compare_canny from src/tampering/compare.py
-    # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_canny(im1, im2)
 
-    # We only need edges from im2 (the comparison image)
-    # Convert RGB edge map to grayscale
     edges_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
 
     # Thresholded version
@@ -54,12 +50,8 @@ def process_canny_output(im1, im2, threshold=200):
 
 
 def process_laplacian_output(im1, im2, threshold=200):
-    # Use compare_laplacian from src/tampering/compare.py
-    # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_laplacian(im1, im2)
 
-    # We only need edges from im2 (the comparison image)
-    # Convert RGB edge map to grayscale
     edges_gray = cv2.cvtColor(edge_maps[1].astype(np.uint8), cv2.COLOR_RGB2GRAY)
 
     # Thresholded version
@@ -96,8 +88,6 @@ def visualize_parcel_comparison(
     # Process each surface
     num_surfaces = len(ref_patches)
 
-    # Create figure with GridSpec for better control
-    # Each surface gets 1 row with 6 columns (RGB images + change/edge maps)
     fig = plt.figure(figsize=(18, 3 * num_surfaces))
 
     plot_idx = 0
@@ -123,8 +113,6 @@ def visualize_parcel_comparison(
         else:
             raise ValueError(f"Unknown method: {method}")
 
-        # Process through selected method (only need raw maps, ignore thresholded)
-        # Reference (using reference vs reference to get baseline)
         if method == 'simsac':
             change1_ref_raw, _ = process_func(
                 ref_patch, ref_patch, threshold, simsac_ckpt_path
@@ -151,8 +139,6 @@ def visualize_parcel_comparison(
                 ref_patch, adv_patch, threshold
             )
 
-        # Create subplot for this surface (1 row, 6 columns)
-        # Columns: RGB Reference, RGB Clean, RGB Adversarial, Map(R), Map(C), Map(A)
         base_idx = surf_idx * 6
 
         # Column 1: Reference image
@@ -195,7 +181,7 @@ def visualize_parcel_comparison(
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f"✓ Saved visualization: {output_path}")
+    print(f" Saved visualization: {output_path}")
 
 
 def main():

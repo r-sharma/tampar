@@ -291,8 +291,6 @@ def cupy_kernel(strFunction, objectVariables):
 
 @cupy.memoize(for_each_device=True)
 def cupy_launch(strFunction, strKernel):
-    # Updated for CuPy 11.0+ compatibility
-    # In CuPy 11.0+, compile_with_cache was replaced with RawModule
     if hasattr(cupy, 'RawModule'):
         # CuPy 11.0+ API
         module = cupy.RawModule(code=strKernel)
@@ -424,8 +422,6 @@ class _FunctionCorrelation(torch.autograd.Function):
                         ],
                         stream=Stream,
                     )
-                # end
-            # end
 
             if gradSecond is not None:
                 for intSample in range(first.size(0)):
@@ -456,8 +452,6 @@ class _FunctionCorrelation(torch.autograd.Function):
                         ],
                         stream=Stream,
                     )
-                # end
-            # end
 
         elif first.is_cuda == False:
             raise NotImplementedError()

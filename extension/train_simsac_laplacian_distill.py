@@ -21,9 +21,7 @@ from src.simsac.models.our_models.SimSaC import SimSaC_Model
 from contrastive_dataset import ContrastivePairsDataset
 
 
-# ---------------------------------------------------------------------------
 # SimSAC gradient proxy  (same as train_simsac_direct_cm.py)
-# ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
     def forward_with_grad(self, im_target, im_source,
@@ -44,9 +42,7 @@ def enable_simsac_gradients(model):
     return model
 
 
-# ---------------------------------------------------------------------------
 # Proxy change magnitude  (differentiable, used as student in distillation)
-# ---------------------------------------------------------------------------
 
 def get_proxy_change_magnitude(simsac, img1, img2):
     mags = []
@@ -78,9 +74,7 @@ def get_proxy_change_magnitude(simsac, img1, img2):
     return torch.stack(mags)
 
 
-# ---------------------------------------------------------------------------
 # Laplacian teacher  (fixed, no grad, immune to SimSAC-targeted attacks)
-# ---------------------------------------------------------------------------
 
 @torch.no_grad()
 def compute_laplacian_diff(img1, img2):
@@ -98,9 +92,7 @@ def compute_laplacian_diff(img1, img2):
     return (lap1 - lap2).pow(2).mean(dim=[1, 2, 3])
 
 
-# ---------------------------------------------------------------------------
 # Loss functions
-# ---------------------------------------------------------------------------
 
 def distillation_loss(student, teacher):
     target = teacher.detach().float()
@@ -126,9 +118,7 @@ def l2_reg_loss(model, original_params):
     return reg
 
 
-# ---------------------------------------------------------------------------
 # Evaluation helpers
-# ---------------------------------------------------------------------------
 
 @torch.no_grad()
 def collect_val_stats(simsac, loader, device):
@@ -169,9 +159,7 @@ def change_map_separation(mags, labels):
     return float(t.mean() - c.mean()), float(t.mean()), float(c.mean())
 
 
-# ---------------------------------------------------------------------------
 # Trainer
-# ---------------------------------------------------------------------------
 
 class LapDistillTrainer:
 
@@ -212,7 +200,6 @@ class LapDistillTrainer:
         self.best_combined = -float('inf')
         self.best_epoch    = 0
 
-    # ------------------------------------------------------------------
     def train_epoch(self, epoch):
         self.simsac.train()
         total_distill = 0.0
@@ -233,7 +220,7 @@ class LapDistillTrainer:
             # Student: proxy change magnitude through patched SimSAC forward
             proxy_mag = get_proxy_change_magnitude(self.simsac, img1, img2)
 
-            # Laplacian distillation: student → match teacher (batch-normalised)
+            # Laplacian distillation: student  match teacher (batch-normalised)
             loss_distill = distillation_loss(proxy_mag, lap_diff)
 
             # L2 reg toward original synthetic.pth (all params)
@@ -259,7 +246,6 @@ class LapDistillTrainer:
 
         return total_distill / n, total_reg / n
 
-    # ------------------------------------------------------------------
     def evaluate(self):
         mags, labels, is_adv = collect_val_stats(
             self.simsac, self.val_loader, self.device
@@ -288,7 +274,6 @@ class LapDistillTrainer:
 
         return clean_acc, adv_acc, overall_acc, sep
 
-    # ------------------------------------------------------------------
     def train(self, output_dir):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -336,7 +321,7 @@ class LapDistillTrainer:
                 self.best_combined = combined
                 self.best_epoch    = epoch + 1
                 self._save(epoch, output_dir, 'best.pth')
-                print(f"  ✓ New best saved  (combined: {combined:.4f})")
+                print(f"   New best saved  (combined: {combined:.4f})")
 
             if (epoch + 1) % 5 == 0:
                 self._save(epoch, output_dir, f'epoch_{epoch+1}.pth')
@@ -353,7 +338,6 @@ class LapDistillTrainer:
         print(f"    --checkpoint {output_dir}/best.pth")
         print(f"  Then compare simsac simple_threshold to baseline 70.7%")
 
-    # ------------------------------------------------------------------
     def _save(self, epoch, output_dir, filename):
         torch.save({
             'epoch':                epoch + 1,
@@ -410,12 +394,10 @@ class LapDistillTrainer:
         plt.tight_layout()
         plt.savefig(output_dir / 'training_progress.png', dpi=150)
         plt.close()
-        print(f"  Plot saved → {output_dir}/training_progress.png")
+        print(f"  Plot saved  {output_dir}/training_progress.png")
 
 
-# ---------------------------------------------------------------------------
 # SimSAC loader
-# ---------------------------------------------------------------------------
 
 def load_simsac(weights_path, device):
     simsac = SimSaC_Model(
@@ -447,9 +429,6 @@ def load_simsac(weights_path, device):
     simsac.load_state_dict(state, strict=False)
     simsac = simsac.to(device)
 
-    # --- Unfreeze ALL parameters ---
-    # v1 had 7.7M frozen (pyramid) + 10.5M trainable (decoder).
-    # Gradient never reached frozen pyramid → weights frozen → val stuck.
     for p in simsac.parameters():
         p.requires_grad_(True)
 
@@ -461,16 +440,14 @@ def load_simsac(weights_path, device):
     n_total = sum(p.numel() for p in simsac.parameters())
     n_train = sum(p.numel() for p in simsac.parameters() if p.requires_grad)
     n_pyr   = sum(p.numel() for p in simsac.pyramid.parameters())
-    print(f"  ✓ SimSAC loaded ({n_total/1e6:.1f}M total, "
+    print(f"   SimSAC loaded ({n_total/1e6:.1f}M total, "
           f"{n_train/1e6:.1f}M trainable) from {weights_path}")
     print(f"    pyramid: {n_pyr/1e6:.1f}M @ lr×0.1 | "
           f"decoder: {(n_train-n_pyr)/1e6:.1f}M @ lr")
     return simsac
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -523,10 +500,10 @@ def main():
         name: param.data.clone().detach()
         for name, param in simsac.named_parameters()
     }
-    print(f"  ✓ Original weights stored ({len(original_params)} tensors, "
+    print(f"   Original weights stored ({len(original_params)} tensors, "
           f"all params including pyramid)")
 
-    print(f"\nBuilding datasets...")
+    print(f"\nBuilding datasets")
     train_dataset = ContrastivePairsDataset(args.train_pairs)
     val_dataset   = ContrastivePairsDataset(args.val_pairs)
 

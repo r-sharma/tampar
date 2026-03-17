@@ -142,7 +142,7 @@ class TamperingPairGenerator:
                         'tampering_code': data.get('tampering_code', 'CLEAN')
                     })
 
-        print(f"\nGenerating triplets ({uvmap_type} UV maps)...")
+        print(f"\nGenerating triplets ({uvmap_type} UV maps)")
 
         for surface_type, parcel_list in parcels_by_surface.items():
             parcels_by_id = defaultdict(list)
@@ -204,7 +204,7 @@ class TamperingPairGenerator:
                         'tampering_code': data.get('tampering_code', 'CLEAN')
                     })
 
-        print(f"\nGenerating quadruplets ({uvmap_type} UV maps)...")
+        print(f"\nGenerating quadruplets ({uvmap_type} UV maps)")
 
         for surface_type, parcel_list in parcels_by_surface.items():
             # group by parcel id first

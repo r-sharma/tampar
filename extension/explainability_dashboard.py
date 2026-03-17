@@ -21,9 +21,7 @@ from extension.tampering_localizer import (
     SURFACE_NAMES,
 )
 
-# ─────────────────────────────────────────────────────
 # Visual Style Constants
-# ─────────────────────────────────────────────────────
 COLOR_TAMPERED = '#FF4444'
 COLOR_CLEAN    = '#44BB44'
 COLOR_NEUTRAL  = '#888888'
@@ -48,45 +46,41 @@ class ExplainabilityDashboard:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ─────────────────────────────────────────────────────
     # Main Entry Point
-    # ─────────────────────────────────────────────────────
 
     def generate(self, result: ParcelLocalizationResult) -> Dict[str, Path]:
-        print(f"\nGenerating dashboard for parcel {result.parcel_id}...")
+        print(f"\nGenerating dashboard for parcel {result.parcel_id}")
         saved_files = {}
 
         # 1. Main overview dashboard
         path = self._plot_overview_dashboard(result)
         saved_files['overview'] = path
-        print(f"  ✓ Overview dashboard : {path}")
+        print(f"   Overview dashboard : {path}")
 
         # 2. Per-surface heatmap grid
         path = self._plot_heatmap_grid(result)
         saved_files['heatmaps'] = path
-        print(f"  ✓ Heatmap grid       : {path}")
+        print(f"   Heatmap grid       : {path}")
 
         # 3. Metrics comparison chart
         path = self._plot_metrics_comparison(result)
         saved_files['metrics'] = path
-        print(f"  ✓ Metrics chart      : {path}")
+        print(f"   Metrics chart      : {path}")
 
         # 4. Tampered region masks
         path = self._plot_tampered_masks(result)
         saved_files['masks'] = path
-        print(f"  ✓ Tampered masks     : {path}")
+        print(f"   Tampered masks     : {path}")
 
         # 5. Verdict summary card
         path = self._plot_verdict_summary(result)
         saved_files['verdict'] = path
-        print(f"  ✓ Verdict summary    : {path}")
+        print(f"   Verdict summary    : {path}")
 
         print(f"\n  All outputs saved to: {self.output_dir}")
         return saved_files
 
-    # ─────────────────────────────────────────────────────
     # Plot 1: Overview Dashboard (main composite figure)
-    # ─────────────────────────────────────────────────────
 
     def _plot_overview_dashboard(self, result: ParcelLocalizationResult) -> Path:
         surfaces = result.surfaces
@@ -121,7 +115,7 @@ class ExplainabilityDashboard:
             is_tampered = surface.is_tampered
             border_color = COLOR_TAMPERED if is_tampered else COLOR_CLEAN
 
-            # ── Row 0: Reference patch ──
+            #  Row 0: Reference patch 
             ax = fig.add_subplot(gs[0, col])
             ax.imshow(surface.patch_reference)
             ax.set_title(
@@ -130,7 +124,7 @@ class ExplainabilityDashboard:
             )
             self._style_ax(ax, border_color, show_border=True)
 
-            # ── Row 1: Query patch ──
+            #  Row 1: Query patch 
             ax = fig.add_subplot(gs[1, col])
             ax.imshow(surface.patch_query)
             decision = 'TAMPERED' if is_tampered else 'CLEAN'
@@ -140,7 +134,7 @@ class ExplainabilityDashboard:
             )
             self._style_ax(ax, border_color, show_border=True)
 
-            # ── Row 2: Heatmap overlay ──
+            #  Row 2: Heatmap overlay 
             ax = fig.add_subplot(gs[2, col])
             ax.imshow(surface.change_map_overlay)
             ax.set_title(
@@ -149,7 +143,7 @@ class ExplainabilityDashboard:
             )
             self._style_ax(ax, border_color, show_border=True)
 
-            # ── Row 3: Metric bar chart ──
+            #  Row 3: Metric bar chart 
             ax = fig.add_subplot(gs[3, col])
             self._draw_metric_bars(ax, surface)
             ax.set_facecolor('#2d2d44')
@@ -169,9 +163,7 @@ class ExplainabilityDashboard:
         plt.close()
         return path
 
-    # ─────────────────────────────────────────────────────
     # Plot 2: Heatmap Grid (detailed)
-    # ─────────────────────────────────────────────────────
 
     def _plot_heatmap_grid(self, result: ParcelLocalizationResult) -> Path:
         surfaces = list(result.surfaces.values())
@@ -223,7 +215,7 @@ class ExplainabilityDashboard:
                 if img.ndim == 2:
                     ax.imshow(img, cmap='hot')
                 else:
-                    # Convert BGR→RGB for cv2 outputs
+                    # Convert BGRRGB for cv2 outputs
                     if col_idx in [2, 4]:
                         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     ax.imshow(img)
@@ -244,9 +236,7 @@ class ExplainabilityDashboard:
         plt.close()
         return path
 
-    # ─────────────────────────────────────────────────────
     # Plot 3: Metrics Comparison
-    # ─────────────────────────────────────────────────────
 
     def _plot_metrics_comparison(self, result: ParcelLocalizationResult) -> Path:
         surfaces = result.surfaces
@@ -322,9 +312,7 @@ class ExplainabilityDashboard:
         plt.close()
         return path
 
-    # ─────────────────────────────────────────────────────
     # Plot 4: Tampered Region Masks
-    # ─────────────────────────────────────────────────────
 
     def _plot_tampered_masks(self, result: ParcelLocalizationResult) -> Path:
         surfaces = list(result.surfaces.values())
@@ -380,9 +368,7 @@ class ExplainabilityDashboard:
         plt.close()
         return path
 
-    # ─────────────────────────────────────────────────────
     # Plot 5: Verdict Summary Card
-    # ─────────────────────────────────────────────────────
 
     def _plot_verdict_summary(self, result: ParcelLocalizationResult) -> Path:
         surfaces = result.surfaces
@@ -392,7 +378,7 @@ class ExplainabilityDashboard:
                                   gridspec_kw={'width_ratios': [1, 2]})
         fig.patch.set_facecolor('#1a1a2e')
 
-        # ── Left: Overall Verdict Box ──
+        #  Left: Overall Verdict Box 
         ax_verdict = axes[0]
         ax_verdict.set_facecolor('#1a1a2e')
         ax_verdict.axis('off')
@@ -429,7 +415,7 @@ class ExplainabilityDashboard:
                         ha='center', va='center',
                         fontsize=10, color='#aaaaaa')
 
-        # ── Right: Per-Surface Table ──
+        #  Right: Per-Surface Table 
         ax_table = axes[1]
         ax_table.set_facecolor('#1a1a2e')
         ax_table.axis('off')
@@ -494,9 +480,7 @@ class ExplainabilityDashboard:
         plt.close()
         return path
 
-    # ─────────────────────────────────────────────────────
     # Helper Methods
-    # ─────────────────────────────────────────────────────
 
     def _style_ax(self, ax, border_color: str, show_border: bool = True):
         ax.set_xticks([])
@@ -532,9 +516,7 @@ class ExplainabilityDashboard:
         )
 
 
-# ─────────────────────────────────────────────────────
 # Main Entry Point
-# ─────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(

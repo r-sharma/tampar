@@ -20,8 +20,6 @@ import pandas as pd
 import os
 parent_dir = Path(__file__).parent.parent
 
-# IMPORTANT: Add parent_dir FIRST so that 'from src.simsac...' works
-# The simsac/inference.py file imports as 'from src.simsac...'
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
@@ -54,7 +52,7 @@ class AdversarialPairDataset(Dataset):
                 skipped += 1
 
         if skipped > 0:
-            print(f"  ⚠️  Skipped {skipped} pairs with missing files")
+            print(f"    Skipped {skipped} pairs with missing files")
 
         print(f"  Valid pairs: {len(self.pairs)}")
 
@@ -111,9 +109,6 @@ class SimSaCRobust(nn.Module):
         else:
             print("Fine-tuning full SimSAC model")
 
-        # Contrastive projection head
-        # SimSAC outputs change maps of shape (H, W, 3)
-        # We'll use global average pooling + MLP to get embeddings
         self.projection_head = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
@@ -206,8 +201,6 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load tampering labels from tampering_mapping.csv
-    # Try multiple possible locations
     possible_paths = [
         parent_dir / 'src' / 'tampering' / 'tampering_mapping.csv',
         Path('/content/tampar/src/tampering/tampering_mapping.csv'),
@@ -254,13 +247,13 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
 
         selected_parcels = sorted(list(parcel_ids))[:max_parcels]
         clean_files = [f for f in clean_files_all if int(f.stem.split('_')[1]) in selected_parcels]
-        print(f"\n⚠️  Limited to {max_parcels} parcels: {selected_parcels}")
+        print(f"\n  Limited to {max_parcels} parcels: {selected_parcels}")
     else:
         clean_files = clean_files_all
         print(f"\nProcessing all parcels")
 
     # Process clean samples
-    print("\nProcessing clean samples...")
+    print("\nProcessing clean samples")
 
     for clean_file in tqdm(clean_files):
         # Parse filename
@@ -312,7 +305,7 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
             })
 
     # Process adversarial samples
-    print("\nProcessing adversarial samples...")
+    print("\nProcessing adversarial samples")
     for background in backgrounds:
         adv_dir = adversarial_dir / background
         if not adv_dir.exists():
@@ -360,8 +353,6 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
 
                 # Check if reference exists (it should have been created during clean processing)
                 if not ref_patch_path.exists():
-                    # Skip this adversarial pair if reference doesn't exist
-                    # This can happen if the clean surface was skipped (e.g., mostly white)
                     continue
 
                 # Save adversarial field patch
@@ -383,7 +374,7 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
     with open(pairs_file, 'wb') as f:
         pickle.dump(pairs, f)
 
-    print(f"\n✓ Created {len(pairs)} pairs")
+    print(f"\n Created {len(pairs)} pairs")
     print(f"  Saved to: {pairs_file}")
 
     # Print statistics
@@ -442,7 +433,7 @@ def train_robust_simsac(data_dir, output_dir, epochs=20, batch_size=4, learning_
 
     best_val_loss = float('inf')
 
-    print(f"\nStarting training for {epochs} epochs...")
+    print(f"\nStarting training for {epochs} epochs")
 
     for epoch in range(epochs):
         # Training
@@ -506,7 +497,7 @@ def train_robust_simsac(data_dir, output_dir, epochs=20, batch_size=4, learning_
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_loss': val_loss,
             }, output_dir / 'best_model.pth')
-            print(f"  ✓ Saved best model (val_loss: {val_loss:.4f})")
+            print(f"   Saved best model (val_loss: {val_loss:.4f})")
 
     # Save final model
     torch.save({
@@ -520,7 +511,7 @@ def train_robust_simsac(data_dir, output_dir, epochs=20, batch_size=4, learning_
     with open(output_dir / 'history.json', 'w') as f:
         json.dump(history, f, indent=2)
 
-    print(f"\n✓ Training complete!")
+    print(f"\n Training complete!")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Saved to: {output_dir}")
 

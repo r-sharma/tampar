@@ -53,9 +53,6 @@ def load_model(checkpoint_path, device='cuda'):
         freeze_backbone=False
     )
 
-    # Load trained weights (TAMPAR-compatible format)
-    # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
-    # We need to add the prefix back to load into our wrapped model
     simsac_state_dict = checkpoint['state_dict']
 
     # Add "simsac." prefix to all keys
@@ -69,7 +66,7 @@ def load_model(checkpoint_path, device='cuda'):
     model = model.to(device)
     model.eval()
 
-    print(f"✓ Model loaded from epoch {checkpoint['epoch']}")
+    print(f" Model loaded from epoch {checkpoint['epoch']}")
 
     return model
 
@@ -138,7 +135,7 @@ def extract_detailed_results(model, pairs_path, device='cuda', batch_size=16):
 
     df = pd.DataFrame(results)
 
-    print(f"✓ Extracted {len(df)} pairs with metadata")
+    print(f" Extracted {len(df)} pairs with metadata")
 
     return df, pairs
 
@@ -173,7 +170,7 @@ def visualize_outlier_pair(pairs, idx, output_dir):
     surface2 = pair.get('surface2', pair.get('image2'))
 
     if surface1 is None or surface2 is None:
-        print(f"⚠ Cannot visualize pair {idx}: missing image data")
+        print(f" Cannot visualize pair {idx}: missing image data")
         return
 
     # Create figure
@@ -202,13 +199,13 @@ def visualize_outlier_pair(pairs, idx, output_dir):
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f"✓ Saved visualization: {output_path}")
+    print(f" Saved visualization: {output_path}")
 
 
 def save_detailed_results(df, output_dir):
     csv_path = output_dir / 'detailed_pair_results.csv'
     df.to_csv(csv_path, index=False)
-    print(f"\n✓ Saved detailed results: {csv_path}")
+    print(f"\n Saved detailed results: {csv_path}")
 
 
 def main():
@@ -263,7 +260,7 @@ def main():
     negative_outliers.to_csv(output_dir / 'negative_outliers.csv', index=False)
     positive_outliers.to_csv(output_dir / 'positive_outliers.csv', index=False)
 
-    print(f"\n✓ Saved outlier CSVs to {output_dir}")
+    print(f"\n Saved outlier CSVs to {output_dir}")
 
     # Visualize top outliers
     print(f"Visualizing Top {args.visualize_top} Outliers")
@@ -271,13 +268,13 @@ def main():
     print("\nNegative pair outliers (high similarity):")
     for i, row in negative_outliers.head(args.visualize_top).iterrows():
         idx = row['idx']
-        print(f"  Visualizing pair {idx} (similarity={row['similarity']:.4f})...")
+        print(f"  Visualizing pair {idx} (similarity={row['similarity']:.4f})")
         visualize_outlier_pair(pairs, idx, output_dir)
 
     print("\nPositive pair outliers (low similarity):")
     for i, row in positive_outliers.head(args.visualize_top).iterrows():
         idx = row['idx']
-        print(f"  Visualizing pair {idx} (similarity={row['similarity']:.4f})...")
+        print(f"  Visualizing pair {idx} (similarity={row['similarity']:.4f})")
         visualize_outlier_pair(pairs, idx, output_dir)
 
     # Summary statistics
@@ -298,7 +295,7 @@ def main():
     print(f"  Min similarity: {neg_df['similarity'].min():.4f}")
     print(f"  Max similarity: {neg_df['similarity'].max():.4f}")
 
-    print("✓ Outlier Investigation Complete!")
+    print(" Outlier Investigation Complete!")
     print(f"\nAll results saved to: {output_dir}")
     print(f"\nGenerated files:")
     print(f"  - detailed_pair_results.csv (all pairs with metadata)")

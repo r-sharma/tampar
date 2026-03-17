@@ -249,8 +249,6 @@ class Trainer:
         if filename is None:
             filename = f"checkpoint_epoch_{epoch+1}.pth"
 
-        # Extract only the base SimSaC model weights (remove "simsac." prefix and projection head)
-        # This ensures compatibility with TAMPAR's inference.py
         full_state_dict = self.model.state_dict()
         simsac_state_dict = {}
 
@@ -281,15 +279,13 @@ class Trainer:
             phase = self.config.get('phase', 1)
             best_path = output_dir / f'phase{phase}_best.pth'
             torch.save(checkpoint, best_path)
-            print(f"  ✓ New best model saved: {best_path}")
+            print(f"   New best model saved: {best_path}")
     
     def load_checkpoint(self, checkpoint_path):
         print(f"\nLoading checkpoint from: {checkpoint_path}")
 
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
-        # We need to add the prefix back to load into our wrapped model
         simsac_state_dict = checkpoint['state_dict']
 
         # Add "simsac." prefix to all keys
@@ -306,7 +302,7 @@ class Trainer:
         self.history = checkpoint['history']
         self.start_epoch = checkpoint['epoch']
 
-        print(f"✓ Checkpoint loaded")
+        print(f" Checkpoint loaded")
         print(f"  Resuming from epoch: {self.start_epoch}")
         print(f"  Best val loss so far: {self.best_val_loss:.4f}")
     
@@ -522,7 +518,7 @@ def main():
                 'learning_rate': []
             }
             trainer.start_epoch = 0
-            print("✓ Scheduler and history reset for Phase 2")
+            print(" Scheduler and history reset for Phase 2")
     
     # Train
     trainer.train(output_dir=args.output_dir)

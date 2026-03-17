@@ -93,7 +93,7 @@ def train_and_evaluate_predictor(
             continue
 
         print(f"Evaluating compare_types: {compare_types}")
-        print(f"Using scores: {scores[:3]}... ({len(scores)} total)")
+        print(f"Using scores: {scores[:3]} ({len(scores)} total)")
 
         predictor = TamperingClassificator(predictor_type)
 
@@ -203,23 +203,23 @@ def main():
 
     args = parser.parse_args()
 
-    print("Loading clean training data...")
+    print("Loading clean training data")
     df_clean = load_results(Path(args.clean_csv))
 
     # Filter out base folder if requested
     if args.exclude_base:
-        print("Excluding base folder from clean data...")
+        print("Excluding base folder from clean data")
         df_clean = df_clean[~df_clean['view'].str.contains('/base/')]
         print(f"  Remaining samples: {len(df_clean)}")
 
     df_train = create_pivot(df_clean)
 
-    print("\nLoading adversarial test data...")
+    print("\nLoading adversarial test data")
     df_adversarial = load_results(Path(args.adversarial_csv))
 
     # Filter out base folder if requested (handles both /base/ and base_adv_*)
     if args.exclude_base:
-        print("Excluding base folder from adversarial data...")
+        print("Excluding base folder from adversarial data")
         # Match '/base/' in view path
         base_mask = df_adversarial['view'].str.contains('/base/')
         # Also check for 'background' column if it exists
@@ -258,7 +258,7 @@ def main():
     # Combine all results
     if len(all_results) > 0:
         df_combined = pd.concat(all_results, ignore_index=True)
-        print(f"\nSaving results to {args.output_csv}...")
+        print(f"\nSaving results to {args.output_csv}")
         df_combined.to_csv(args.output_csv, index=False)
 
         print("\n" + "="*70)

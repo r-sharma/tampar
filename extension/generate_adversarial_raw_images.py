@@ -16,12 +16,10 @@ from tqdm import tqdm
 from src.simsac.models.our_models.SimSaC import SimSaC_Model
 
 
-# ---------------------------------------------------------------------------
 # SimSAC model loading (same as generate_adversarial_simsac_targeted.py)
-# ---------------------------------------------------------------------------
 
 def load_simsac_model(checkpoint_path, device='cuda'):
-    print(f"Loading SimSAC model from {checkpoint_path}...")
+    print(f"Loading SimSAC model from {checkpoint_path}")
 
     model = SimSaC_Model(
         evaluation=False,
@@ -43,7 +41,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     model.train()
 
     # Monkey-patch to remove no_grad() wrapper so gradients can flow
-    print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)...")
+    print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)")
 
     def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
         b, _, h_full, w_full = im_target.size()
@@ -72,13 +70,11 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     import types
     model.forward_sigle_ref = types.MethodType(forward_with_grad, model)
 
-    print("✓ SimSAC model loaded with gradient flow enabled")
+    print(" SimSAC model loaded with gradient flow enabled")
     return model
 
 
-# ---------------------------------------------------------------------------
 # Attack generator targeting SimSAC change map
-# ---------------------------------------------------------------------------
 
 class RawImageAttackGenerator:
 
@@ -196,9 +192,7 @@ class RawImageAttackGenerator:
         return adv_np
 
 
-# ---------------------------------------------------------------------------
 # Reference UV map lookup
-# ---------------------------------------------------------------------------
 
 def find_reference_uvmap(field_image_path, uvmaps_dir):
     filename = field_image_path.stem
@@ -220,9 +214,7 @@ def find_reference_uvmap(field_image_path, uvmaps_dir):
     return reference_path
 
 
-# ---------------------------------------------------------------------------
 # Main dataset generation logic
-# ---------------------------------------------------------------------------
 
 def generate_adversarial_raw_dataset(
     data_dir,
@@ -290,14 +282,10 @@ def generate_adversarial_raw_dataset(
     for subdir in subdirs:
         print(f"\n--- Folder: {subdir.name} ---")
 
-        # Find all original field images (exclude already-attacked ones)
-        # Pattern: id_XX_YYYYMMDD_HHMMSS.jpg  (no attack suffix in stem)
         raw_images = []
         for f in sorted(subdir.glob("*.jpg")):
             stem = f.stem
             parts = stem.split('_')
-            # Original images have exactly 4 parts: id, XX, YYYYMMDD, HHMMSS
-            # Attacked images have 5 parts: id, XX, YYYYMMDD, HHMMSS, fgsm/pgd
             if len(parts) == 4 and parts[0] == 'id':
                 raw_images.append(f)
 
@@ -325,7 +313,7 @@ def generate_adversarial_raw_dataset(
             try:
                 reference_path = find_reference_uvmap(field_path, uvmaps_dir)
             except FileNotFoundError as e:
-                print(f"  ⚠ {e}")
+                print(f"   {e}")
                 errors += 1
                 continue
 
@@ -351,10 +339,10 @@ def generate_adversarial_raw_dataset(
                     stats[attack] += 1
 
                 except Exception as e:
-                    print(f"  ✗ Error on {field_path.name} ({attack}): {e}")
+                    print(f"   Error on {field_path.name} ({attack}): {e}")
                     errors += 1
 
-    print("✓ Adversarial raw image generation complete!")
+    print(" Adversarial raw image generation complete!")
     for attack, count in stats.items():
         print(f"  {attack.upper()} adversarial images: {count}")
     print(f"  Errors / skipped:        {errors}")
@@ -362,9 +350,7 @@ def generate_adversarial_raw_dataset(
     print("  to produce *_fgsm_uvmap_gt.png / *_pgd_uvmap_gt.png files.")
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -411,9 +397,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle exclude_folders with prefix matching for base_adv_* etc.
-    # We pass the raw list; prefix matching is done inside generate function
-    # by checking startswith for each entry ending with '*'
 
     generate_adversarial_raw_dataset(
         data_dir=args.data_dir,

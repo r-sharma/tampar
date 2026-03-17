@@ -12,7 +12,7 @@ import matplotlib.gridspec as gridspec
 
 warnings.filterwarnings('ignore')
 
-# ── ML ───────────────────────────────────────────────────────────────────────
+#  ML 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
@@ -34,9 +34,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'extension'))
 
 
-# ---------------------------------------------------------------------------
 # Feature engineering from CSV
-# ---------------------------------------------------------------------------
 
 COMPARE_TYPES = ['simsac', 'plain', 'canny', 'laplacian', 'meanchannel']
 METRICS       = ['msssim', 'cwssim', 'ssim', 'hog', 'mae']
@@ -55,7 +53,7 @@ def pivot_csv_to_features(df: pd.DataFrame) -> pd.DataFrame:
         aggfunc='first'
     )
 
-    # Flatten multi-level columns: (metric, compare_type) → compare_type_metric
+    # Flatten multi-level columns: (metric, compare_type)  compare_type_metric
     pivot.columns = [f"{ct}_{m}" for m, ct in pivot.columns]
     pivot = pivot.reset_index()
 
@@ -74,9 +72,7 @@ def load_and_pivot(csv_path: str, tag: str = '') -> pd.DataFrame:
     return pivoted
 
 
-# ---------------------------------------------------------------------------
 # Projection head cosine similarity extraction
-# ---------------------------------------------------------------------------
 
 def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
                                 weights_path: str, device: str) -> pd.Series:
@@ -87,7 +83,7 @@ def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
 
     from simsac_contrastive_model import create_simsac_contrastive
 
-    print(f"\nLoading fine-tuned model for projection head features...")
+    print(f"\nLoading fine-tuned model for projection head features")
     model = create_simsac_contrastive(
         weights_path=weights_path,
         projection_dim=128,
@@ -100,23 +96,19 @@ def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
         strict=False
     )
     model.eval()
-    print(f"  ✓ Loaded checkpoint (epoch {ckpt['epoch']})")
+    print(f"   Loaded checkpoint (epoch {ckpt['epoch']})")
 
     transform = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.ToTensor(),
     ])
 
-    # Determine IMAGE_ROOT from 'view' paths (first part of relative path)
-    # view example: "validation/id_01_20230516_142710_uvmap_pred.png"
-    # We need to find where the uvmaps and gt_uvmaps live
-    # Use ROOT as base — adjust if needed
     IMAGE_ROOT = ROOT / "data" / "tampar_sample"
     UVMAP_DIR  = IMAGE_ROOT / "uvmaps"
 
     # Get unique (parcel_id, view) pairs
     unique_pairs = df[['parcel_id', 'view']].drop_duplicates()
-    print(f"  Extracting projection head features for {len(unique_pairs)} unique pairs...")
+    print(f"  Extracting projection head features for {len(unique_pairs)} unique pairs")
 
     results = {}
     missing = 0
@@ -149,14 +141,12 @@ def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
                 missing += 1
 
     if missing > 0:
-        print(f"  ⚠ {missing} pairs missing UV map files — filled with NaN")
+        print(f"   {missing} pairs missing UV map files — filled with NaN")
 
     return pd.Series(results, name='proj_head_cosine_sim')
 
 
-# ---------------------------------------------------------------------------
 # Classifier training + evaluation
-# ---------------------------------------------------------------------------
 
 FEATURE_COLS = [f"{ct}_{m}" for ct in COMPARE_TYPES for m in METRICS]
 
@@ -228,7 +218,7 @@ def plot_results(all_results, output_dir: Path):
     plt.tight_layout()
     plt.savefig(output_dir / 'accuracy_comparison.png', dpi=150)
     plt.close()
-    print(f"\n✓ Saved: {output_dir / 'accuracy_comparison.png'}")
+    print(f"\n Saved: {output_dir / 'accuracy_comparison.png'}")
 
     # Confusion matrices
     n = len(all_results)
@@ -250,7 +240,7 @@ def plot_results(all_results, output_dir: Path):
     plt.tight_layout()
     plt.savefig(output_dir / 'confusion_matrices.png', dpi=150)
     plt.close()
-    print(f"✓ Saved: {output_dir / 'confusion_matrices.png'}")
+    print(f" Saved: {output_dir / 'confusion_matrices.png'}")
 
     # Feature importance (RF)
     rf_results = [r for r in all_results if 'RF' in r['name'] and hasattr(r.get('model'), 'feature_importances_')]
@@ -283,12 +273,10 @@ def print_feature_importance(model, feature_names, top_n=15, output_dir=None):
         plt.tight_layout()
         plt.savefig(output_dir / 'feature_importance.png', dpi=150)
         plt.close()
-        print(f"✓ Saved: {output_dir / 'feature_importance.png'}")
+        print(f" Saved: {output_dir / 'feature_importance.png'}")
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -334,11 +322,11 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Load CSVs ────────────────────────────────────────────────────────────
+    #  Load CSVs 
     df_clean = load_and_pivot(args.clean_csv, tag='clean')
     df_adv   = load_and_pivot(args.adv_csv,   tag='adv') if args.adv_csv else None
 
-    # ── Projection head features ─────────────────────────────────────────────
+    #  Projection head features 
     use_proj = (args.checkpoint is not None and not args.no_proj_head)
 
     if use_proj:
@@ -347,7 +335,7 @@ def main():
             import extension.train_tampering_classifier as _self
             _self.ROOT = Path(args.image_root).parent
 
-        print(f"\nExtracting projection head cosine similarities...")
+        print(f"\nExtracting projection head cosine similarities")
         proj_series_clean = extract_proj_head_features(
             df_clean, args.checkpoint, args.weights_path, args.device
         )
@@ -363,7 +351,7 @@ def main():
     else:
         print("\nSkipping projection head features (--no_proj_head or no --checkpoint)")
 
-    # ── Build feature matrices ───────────────────────────────────────────────
+    #  Build feature matrices 
     X_clean, y_clean, feat_names = get_xy(df_clean)
     print(f"\nFeature matrix (clean):  {X_clean.shape}  "
           f"({y_clean.sum()} tampered, {(y_clean==0).sum()} clean)")
@@ -374,7 +362,7 @@ def main():
         print(f"Feature matrix (adv):    {X_adv.shape}  "
               f"({y_adv.sum()} tampered, {(y_adv==0).sum()} clean)")
 
-    # ── Classifiers ─────────────────────────────────────────────────────────
+    #  Classifiers 
     classifiers = {
         'RF': RandomForestClassifier(
             n_estimators=args.n_estimators,
@@ -398,14 +386,14 @@ def main():
             verbosity=0
         )
 
-    # ── Cross-validation on clean data ───────────────────────────────────────
+    #  Cross-validation on clean data 
     print("5-Fold Cross-Validation on Clean Data")
     for name, clf in classifiers.items():
         cv_scores = cross_val_score(clf, X_clean, y_clean, cv=5, scoring='accuracy')
         print(f"  {name}: {cv_scores.mean()*100:.2f}% ± {cv_scores.std()*100:.2f}%")
 
-    # ── Train on clean, evaluate on clean + adversarial ──────────────────────
-    print("Train on CLEAN → Evaluate on CLEAN + ADVERSARIAL")
+    #  Train on clean, evaluate on clean + adversarial 
+    print("Train on CLEAN  Evaluate on CLEAN + ADVERSARIAL")
     print("(This is the key test: does the classifier generalise to adv inputs?)")
 
     all_results = []
@@ -429,9 +417,9 @@ def main():
             r_adv['model'] = clf
             all_results.append(r_adv)
 
-    # ── Train on CLEAN + ADV, evaluate on adv ────────────────────────────────
+    #  Train on CLEAN + ADV, evaluate on adv 
     if df_adv is not None:
-        print("Train on CLEAN + ADVERSARIAL → Evaluate on ADVERSARIAL")
+        print("Train on CLEAN + ADVERSARIAL  Evaluate on ADVERSARIAL")
         print("(Classifier sees both distributions during training)")
 
         X_combined = np.vstack([X_clean, X_adv])
@@ -456,22 +444,22 @@ def main():
             r['model'] = clf_class
             all_results.append(r)
 
-    # ── Baseline reminder ────────────────────────────────────────────────────
+    #  Baseline reminder 
     print("Baselines (predict_tampering with threshold):")
     print("  Clean images:        ~84%")
-    print("  Adversarial images:  ~71%  ← this is what we aim to beat")
+    print("  Adversarial images:  ~71%   this is what we aim to beat")
 
-    # ── Feature importance ───────────────────────────────────────────────────
+    #  Feature importance 
     print("Feature Importance (Random Forest, trained on clean)")
     rf_model = trained_models.get('RF')
     if rf_model is not None:
         print_feature_importance(rf_model, feat_names, top_n=15,
                                  output_dir=output_dir)
 
-    # ── Plots ────────────────────────────────────────────────────────────────
+    #  Plots 
     plot_results(all_results, output_dir)
 
-    # ── Save results JSON ────────────────────────────────────────────────────
+    #  Save results JSON 
     summary = []
     for r in all_results:
         summary.append({
@@ -486,7 +474,7 @@ def main():
     results_path = output_dir / 'classifier_results.json'
     with open(results_path, 'w') as f:
         json.dump(summary, f, indent=2)
-    print(f"\n✓ Results saved: {results_path}")
+    print(f"\n Results saved: {results_path}")
 
     print("Done! Generated files:")
     print(f"  {output_dir}/accuracy_comparison.png")

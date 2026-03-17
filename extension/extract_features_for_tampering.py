@@ -57,9 +57,6 @@ def load_model(checkpoint_path, device='cuda'):
         freeze_backbone=False
     )
 
-    # Load trained weights (TAMPAR-compatible format)
-    # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
-    # We need to add the prefix back to load into our wrapped model
     simsac_state_dict = checkpoint['state_dict']
 
     # Add "simsac." prefix to all keys
@@ -73,7 +70,7 @@ def load_model(checkpoint_path, device='cuda'):
     model = model.to(device)
     model.eval()
 
-    print(f"✓ Model loaded from epoch {checkpoint['epoch']}")
+    print(f" Model loaded from epoch {checkpoint['epoch']}")
 
     return model
 
@@ -88,8 +85,6 @@ def extract_surfaces_from_uvmap(uv_map_path):
     # Extract surfaces using TAMPAR's function (returns list of 9 patches in 3x3 grid)
     surfaces_list = get_side_surface_patches(uv_map_array)
 
-    # PATCH_ORDER from TAMPAR: ["", "top", "", "left", "center", "right", "", "bottom", ""]
-    # Map list indices to surface names
     patch_order = ["", "top", "", "left", "center", "right", "", "bottom", ""]
 
     surfaces_dict = {}
@@ -179,7 +174,7 @@ def load_surface_data(data_root, split='validation'):
                 'surfaces': surfaces
             })
 
-    print(f"✓ Loaded surface data for {len(surface_data)} parcels")
+    print(f" Loaded surface data for {len(surface_data)} parcels")
 
     return surface_data
 
@@ -251,7 +246,7 @@ def extract_surface_features(model, surface_data, device='cuda'):
 
                     surface_features[(parcel_id, filename, surf_name)] = z
 
-    print(f"✓ Extracted features for {len(surface_features)} surfaces")
+    print(f" Extracted features for {len(surface_features)} surfaces")
     print(f"  Feature dimension: {list(surface_features.values())[0].shape[0]}")
 
     return surface_features
@@ -277,8 +272,6 @@ def compute_surface_pairwise_features(surface_features, surface_data, tampering_
                 ref_feat = surface_features[ref_key]
                 field_feat = surface_features[field_key]
 
-                # Compute similarity metrics
-                # 1. Cosine similarity
                 cos_sim = np.dot(ref_feat, field_feat) / (
                     np.linalg.norm(ref_feat) * np.linalg.norm(field_feat)
                 )
@@ -303,7 +296,7 @@ def compute_surface_pairwise_features(surface_features, surface_data, tampering_
                     'tampering_code': tampering_info['code']
                 })
 
-    print(f"✓ Created {len(results)} surface-level feature pairs")
+    print(f" Created {len(results)} surface-level feature pairs")
 
     # Save as CSV
     csv_path = output_dir / 'surface_features.csv'
@@ -315,13 +308,13 @@ def compute_surface_pairwise_features(surface_features, surface_data, tampering_
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"✓ Saved: {csv_path}")
+    print(f" Saved: {csv_path}")
 
     # Also save as pickle for easy loading
     pkl_path = output_dir / 'surface_features.pkl'
     with open(pkl_path, 'wb') as f:
         pickle.dump(results, f)
-    print(f"✓ Saved: {pkl_path}")
+    print(f" Saved: {pkl_path}")
 
     # Statistics
     num_tampered = sum(1 for r in results if r['is_tampered'])
@@ -380,7 +373,7 @@ def load_uv_maps(data_root, split='validation'):
             key = f"{parcel_id}_{pred_file.name}"
             uv_maps[key] = str(pred_file)
     
-    print(f"✓ Loaded {len(uv_maps)} UV map paths")
+    print(f" Loaded {len(uv_maps)} UV map paths")
     
     return uv_maps
 
@@ -413,7 +406,7 @@ def extract_contrastive_features(model, uv_maps, device='cuda'):
             
             features_dict[key] = z
     
-    print(f"✓ Extracted features for {len(features_dict)} UV maps")
+    print(f" Extracted features for {len(features_dict)} UV maps")
     print(f"  Feature dimension: {list(features_dict.values())[0].shape[0]}")
     
     return features_dict
@@ -434,8 +427,6 @@ def compute_pairwise_features(features_dict, output_dir):
     pair_info = []
     
     for pred_key, pred_feat in pred_features.items():
-        # Extract parcel ID from predicted key
-        # e.g., "id_01_id_01_20230516_142710_uvmap_pred.png" -> "id_01"
         parts = pred_key.split('_')
         parcel_id = f"{parts[0]}_{parts[1]}"
         
@@ -449,8 +440,6 @@ def compute_pairwise_features(features_dict, output_dir):
         if ref_key:
             ref_feat = ref_features[ref_key]
             
-            # Compute similarity features
-            # 1. Cosine similarity
             cos_sim = np.dot(pred_feat, ref_feat) / (
                 np.linalg.norm(pred_feat) * np.linalg.norm(ref_feat)
             )
@@ -479,7 +468,7 @@ def compute_pairwise_features(features_dict, output_dir):
                 'pred_key': pred_key
             })
     
-    print(f"✓ Created {len(feature_pairs)} feature pairs")
+    print(f" Created {len(feature_pairs)} feature pairs")
     
     # Save features
     features_path = output_dir / 'contrastive_features.pkl'
@@ -489,10 +478,8 @@ def compute_pairwise_features(features_dict, output_dir):
             'info': pair_info
         }, f)
     
-    print(f"✓ Saved: {features_path}")
+    print(f" Saved: {features_path}")
     
-    # Also save as numpy for easy loading
-    # Extract different feature types
     cos_sims = np.array([f['cosine_similarity'] for f in feature_pairs])
     l2_dists = np.array([f['l2_distance'] for f in feature_pairs])
     
@@ -503,7 +490,7 @@ def compute_pairwise_features(features_dict, output_dir):
         pair_info=pair_info
     )
     
-    print(f"✓ Saved: {output_dir / 'contrastive_features.npz'}")
+    print(f" Saved: {output_dir / 'contrastive_features.npz'}")
     
     return feature_pairs, pair_info
 
@@ -511,8 +498,6 @@ def compute_pairwise_features(features_dict, output_dir):
 def extract_baseline_features(data_root, output_dir):
     print("Extracting Baseline TAMPAR Features (Placeholder)")
     
-    # TODO: Implement baseline feature extraction
-    # This would require running TAMPAR's original feature extraction pipeline
     
     print("Note: Baseline feature extraction not implemented")
     print("In full implementation, would extract:")
@@ -527,7 +512,7 @@ def extract_baseline_features(data_root, output_dir):
         f.write("Baseline TAMPAR features would be extracted here\n")
         f.write("Run TAMPAR's original feature extraction pipeline\n")
     
-    print(f"✓ Saved placeholder: {placeholder_path}")
+    print(f" Saved placeholder: {placeholder_path}")
 
 
 def create_summary(features_dict, feature_pairs, output_dir):
@@ -550,7 +535,7 @@ def create_summary(features_dict, feature_pairs, output_dir):
     with open(summary_path, 'w') as f:
         json.dump(summary, f, indent=2)
     
-    print(f"✓ Summary saved: {summary_path}")
+    print(f" Summary saved: {summary_path}")
     
     print(f"\nSummary:")
     print(f"  Total UV maps: {summary['total_uv_maps']}")
@@ -615,7 +600,7 @@ def main():
             raise FileNotFoundError(f"Tampering mapping CSV not found: {tampering_csv}")
 
         tampering_map = load_tampering_mapping(tampering_csv)
-        print(f"✓ Loaded tampering mapping from {tampering_csv}")
+        print(f" Loaded tampering mapping from {tampering_csv}")
 
         # Load surface data
         surface_data = load_surface_data(args.data_root, args.split)
@@ -628,7 +613,7 @@ def main():
             surface_features, surface_data, tampering_map, output_dir
         )
 
-        print("✓ Surface-Level Feature Extraction Complete!")
+        print(" Surface-Level Feature Extraction Complete!")
         print(f"\nGenerated files:")
         print(f"  - surface_features.csv (for classifier training)")
         print(f"  - surface_features.pkl (Python object)")
@@ -657,7 +642,7 @@ def main():
         # Create summary
         create_summary(features_dict, feature_pairs, output_dir)
 
-        print("✓ UV Map Feature Extraction Complete!")
+        print(" UV Map Feature Extraction Complete!")
         print(f"\nGenerated files:")
         print(f"  - contrastive_features.pkl (full features)")
         print(f"  - contrastive_features.npz (similarity metrics)")

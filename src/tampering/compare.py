@@ -84,9 +84,6 @@ class CompareType:
             # cls.DEXINED,
             cls.CANNY,
             cls.LAPLACIAN,
-            # cls.SOBEL,
-            # cls.EXPOSURE,
-            # cls.EQUALIZE_HIST,
             cls.MEAN_CHANNEL,
             # cls.CLAHE,
         ]

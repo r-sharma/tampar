@@ -10,9 +10,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from xgboost import XGBClassifier
 
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 
 METRICS       = ['msssim', 'cwssim', 'ssim', 'hog', 'mae']
 METRIC_LABELS = {
@@ -47,9 +45,7 @@ COLORS = {
 PATCH_INDEX = {'top': 1, 'left': 3, 'center': 4, 'right': 5, 'bottom': 7}
 
 
-# ---------------------------------------------------------------------------
 # Data loading
-# ---------------------------------------------------------------------------
 
 def load_simsac_features(csv_path):
     df = pd.read_csv(csv_path)
@@ -81,9 +77,7 @@ def load_simsac_features(csv_path):
     return df
 
 
-# ---------------------------------------------------------------------------
 # Metric thresholds
-# ---------------------------------------------------------------------------
 
 def compute_metric_thresholds(df):
     thresholds = {}
@@ -102,9 +96,7 @@ def compute_metric_thresholds(df):
     return thresholds
 
 
-# ---------------------------------------------------------------------------
 # XGBoost training
-# ---------------------------------------------------------------------------
 
 def train_xgboost(df):
     X = df[METRICS].values
@@ -130,9 +122,7 @@ def train_xgboost(df):
     return clf, probs, preds
 
 
-# ---------------------------------------------------------------------------
 # Sample selection  (surface-level, not parcel-level)
-# ---------------------------------------------------------------------------
 
 def select_samples(df, probs, preds, n_tampered=3, n_clean=2,
                    random_state=None, top_k_factor=10):
@@ -191,9 +181,7 @@ def select_samples(df, probs, preds, n_tampered=3, n_clean=2,
     return selected
 
 
-# ---------------------------------------------------------------------------
 # Image helpers
-# ---------------------------------------------------------------------------
 
 def _load_image(path):
     import cv2 as _cv2
@@ -247,9 +235,7 @@ def _show_patch(ax, img, title, title_color, border_color, bg_color):
         spine.set_linewidth(1.8)
 
 
-# ---------------------------------------------------------------------------
 # Metric bars + probability gauge
-# ---------------------------------------------------------------------------
 
 def plot_metric_bar(ax, row, importances, metric_thresholds=None,
                     show_title=True, show_xlabel=True):
@@ -263,8 +249,6 @@ def plot_metric_bar(ax, row, importances, metric_thresholds=None,
         # Use data-driven threshold if available, else fall back to 0.5
         threshold = metric_thresholds[metric] if metric_thresholds else 0.5
 
-        # Orange = metric pointing in the tampered direction (relative to threshold)
-        # Blue   = metric pointing in the clean direction
         if METRIC_TAMPERED_IS_LOW[metric]:
             tampered_signal = val < threshold
         else:
@@ -329,9 +313,7 @@ def plot_probability_gauge(ax, prob, pred, ground_truth,
     ax.spines['left'].set_visible(False)
 
 
-# ---------------------------------------------------------------------------
 # Figure builder  — one row per surface sample
-# ---------------------------------------------------------------------------
 
 def build_figure(selected, importances, output_path,
                  uvmap_dir=None, adv_dir=None, metric_thresholds=None):
@@ -362,10 +344,6 @@ def build_figure(selected, importances, output_path,
         hspace=0.12,
     )
 
-    # Column layout per row:
-    # [label | ref | arrow | adv | spacer | metrics | gauge]
-    # Spacer (col 4) adds extra breathing room between adv image and metric bars.
-    # Arrow (col 2) is kept narrow to keep ref and adv close together.
     col_ratios = [0.55, 2.2, 0.15, 2.2, 0.35, 3.0, 2.3]
 
     for i, (_, row) in enumerate(selected.iterrows()):
@@ -381,8 +359,6 @@ def build_figure(selected, importances, output_path,
         is_first = (i == 0)
         is_last  = (i == n - 1)
 
-        # Show column headers on the first row AND whenever the label changes
-        # (tampered → clean transition), so each group has its own header.
         prev_tampered = bool(selected.iloc[i - 1]['tampered']) if i > 0 else None
         show_headers  = is_first or (prev_tampered is not None and is_tampered != prev_tampered)
 
@@ -399,7 +375,7 @@ def build_figure(selected, importances, output_path,
         ref_patch = get_surface_patch(ref_uvmap, surf_name) if ref_uvmap is not None and surf_name in PATCH_INDEX else None
         adv_patch = get_surface_patch(adv_uvmap, surf_name) if adv_uvmap is not None and surf_name in PATCH_INDEX else None
 
-        # ── Col 0: Label ────────────────────────────────────────────────────
+        #  Col 0: Label 
         ax_lbl = fig.add_subplot(gs[0, 0])
         ax_lbl.set_facecolor(bg_color)
         ax_lbl.set_xticks([]); ax_lbl.set_yticks([])
@@ -423,13 +399,13 @@ def build_figure(selected, importances, output_path,
                     bbox=dict(boxstyle='round,pad=0.22', facecolor=badge_color,
                               alpha=0.85, edgecolor='none'))
 
-        # ── Col 1: Reference patch ───────────────────────────────────────────
+        #  Col 1: Reference patch 
         ax_ref = fig.add_subplot(gs[0, 1])
         _show_patch(ax_ref, ref_patch,
                     title='Reference' if show_headers else '',
                     title_color='#2471A3', border_color='#2471A3', bg_color='#EBF5FB')
 
-        # ── Col 2: Arrow ─────────────────────────────────────────────────────
+        #  Col 2: Arrow 
         ax_arr = fig.add_subplot(gs[0, 2])
         ax_arr.axis('off')
         ax_arr.annotate('', xy=(0.85, 0.5), xytext=(0.15, 0.5),
@@ -437,18 +413,18 @@ def build_figure(selected, importances, output_path,
                         arrowprops=dict(arrowstyle='->', color='#555555',
                                         lw=2.0, mutation_scale=15))
 
-        # ── Col 3: Adversarial patch ─────────────────────────────────────────
+        #  Col 3: Adversarial patch 
         ax_adv = fig.add_subplot(gs[0, 3])
         adv_label = 'TAMPERED' if is_tampered else 'CLEAN'
         _show_patch(ax_adv, adv_patch,
                     title=f'Adversarial ({adv_label})' if show_headers else '',
                     title_color=badge_color, border_color=badge_color, bg_color=bg_color)
 
-        # ── Col 4: Spacer ─────────────────────────────────────────────────────
+        #  Col 4: Spacer 
         ax_sp = fig.add_subplot(gs[0, 4])
         ax_sp.axis('off')
 
-        # ── Col 5: SimSAC metric bars ─────────────────────────────────────────
+        #  Col 5: SimSAC metric bars 
         ax_metrics = fig.add_subplot(gs[0, 5])
         ax_metrics.set_facecolor(bg_color)
         plot_metric_bar(ax_metrics, row, importances,
@@ -457,7 +433,7 @@ def build_figure(selected, importances, output_path,
         for spine in ax_metrics.spines.values():
             spine.set_edgecolor('#CCCCCC'); spine.set_linewidth(0.8)
 
-        # ── Col 6: Probability gauge ─────────────────────────────────────────
+        #  Col 6: Probability gauge 
         ax_gauge = fig.add_subplot(gs[0, 6])
         ax_gauge.set_facecolor(bg_color)
         plot_probability_gauge(ax_gauge, prob, row['pred'], is_tampered,
@@ -479,13 +455,11 @@ def build_figure(selected, importances, output_path,
 
     plt.savefig(output_path, dpi=150, bbox_inches='tight',
                 facecolor=fig.get_facecolor())
-    print(f"\n✓ Figure saved → {output_path}")
+    print(f"\n Figure saved  {output_path}")
     return fig
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -522,11 +496,11 @@ def main():
     if args.include_parcels is not None:
         before = len(df)
         df = df[df['parcel_id'].isin(args.include_parcels)].copy()
-        print(f"include_parcels={args.include_parcels}: {before} → {len(df)} rows")
+        print(f"include_parcels={args.include_parcels}: {before}  {len(df)} rows")
     if args.exclude_parcels is not None:
         before = len(df)
         df = df[~df['parcel_id'].isin(args.exclude_parcels)].copy()
-        print(f"exclude_parcels={args.exclude_parcels}: {before} → {len(df)} rows")
+        print(f"exclude_parcels={args.exclude_parcels}: {before}  {len(df)} rows")
     if len(df) == 0:
         raise ValueError("No rows remain after parcel filtering — check --include_parcels / --exclude_parcels.")
     clf, probs, preds = train_xgboost(df)

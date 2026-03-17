@@ -109,7 +109,7 @@ def save_surface_predictions(
         surfaces.append(parts[1] if len(parts) > 1 else '')
         gt_kps.append(parts[2] if len(parts) > 2 else '')
 
-    # Extract parcel_id from view path (e.g. "validation/carpet/id_05_...png" -> 5)
+    # Extract parcel_id from view path (e.g. "validation/carpet/id_05_png" -> 5)
     parcel_ids = []
     for v in views:
         try:
@@ -385,8 +385,6 @@ def main():
         if len(all_results) > 1:
             print("\n" + "="*70)
             print("CLASSIFIER COMPARISON SUMMARY")
-            # Show best accuracy for each predictor
-            # Use correct column names from evaluate.py
             agg_dict = {'accuracy': 'max'}
 
             # Check which metric columns exist

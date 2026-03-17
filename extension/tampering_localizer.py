@@ -80,7 +80,7 @@ class TamperingLocalizer:
         self.change_map_threshold = change_map_threshold
 
         # Load SimSAC model
-        print(f"Loading SimSAC model...")
+        print(f"Loading SimSAC model")
         if simsac_ckpt_path:
             self.simsac = SimSaC.get_instance(ckpt_path=simsac_ckpt_path)
             print(f"  Using checkpoint: {simsac_ckpt_path}")
@@ -245,7 +245,7 @@ class TamperingLocalizer:
         query_uvmap_path: str,
         parcel_id: int = 0,
     ) -> ParcelLocalizationResult:
-        print(f"\nLocalizing parcel {parcel_id}...")
+        print(f"\nLocalizing parcel {parcel_id}")
         print(f"  Reference : {reference_uvmap_path}")
         print(f"  Query     : {query_uvmap_path}")
 
