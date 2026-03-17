@@ -203,7 +203,7 @@ def main():
 
     args = parser.parse_args()
 
-    print("Loading clean training data")
+    print("Loading clean data for training")
     df_clean = load_results(Path(args.clean_csv))
 
     # Filter out base folder if requested

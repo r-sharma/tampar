@@ -159,7 +159,7 @@ def main():
         all_results.append(df_results)
 
     df_combined = pd.concat(all_results, ignore_index=True)
-    df_combined.to_csv("tampering_results.csv", index=False)
+    df_combined.to_csv("results_tampering.csv", index=False)
 
 
 if __name__ == "__main__":

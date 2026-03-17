@@ -384,7 +384,7 @@ def main():
         # Print summary comparison
         if len(all_results) > 1:
             print("\n" + "="*70)
-            print("CLASSIFIER COMPARISON SUMMARY")
+            print("Classifier Comparison Summary")
             agg_dict = {'accuracy': 'max'}
 
             # Check which metric columns exist

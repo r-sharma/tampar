@@ -17,7 +17,7 @@ from src.tampering.compare import CompareType, compute_uvmap_similarity
 IMAGE_ROOT = ROOT / "data" / "tampar_sample"
 UVMAP_DIR = IMAGE_ROOT / "uvmaps"
 OUT_IMAGES = ROOT / "out_imgs"
-NUM_WORKERS = 4
+NUM_WORKERS = 2
 
 
 def load_tampering_mapping():
