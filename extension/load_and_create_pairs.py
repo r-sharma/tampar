@@ -909,13 +909,9 @@ def main():
             train_split=0.8
         )
         
-        print(" Pair Creation Complete!")
-        print(f"\nDataset saved:")
         print(f"  Train: {train_path}")
         print(f"  Val: {val_path}")
     
-    print(" All Tasks Complete!")
-    print(f"\nData loaded:")
     print(f"  Reference UV maps: {len(loader.uv_maps.get('reference', {}))}")
     if args.split in loader.uv_maps:
         print(f"  {args.split.capitalize()} parcels: {len(loader.uv_maps[args.split])}")

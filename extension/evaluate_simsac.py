@@ -501,21 +501,8 @@ def main():
         print(f"  Detected mode: {mode}")
 
     if mode == 'direct_cm':
-        print("NOTE: Direct-CM checkpoint detected")
-        print("  The projection head was NOT trained by train_simsac_direct_cm.py.")
-        print("  Cosine similarity of projection-head embeddings is MEANINGLESS")
-        print("  for this checkpoint — both clean and tampered pairs will show")
-        print("  similar high-similarity distributions (randomly initialised head).")
-        print("  --data_dir / --val_pairs are NOT required in this mode.")
-        print()
-        print("  Using feature-distribution visualisation instead.")
-        print("  This shows the SimSAC change-map quality that drives the")
-        print("  XGBoost 89%+ accuracy.")
 
         if args.simscores_csv is None:
-            print("\nERROR: --simscores_csv is required for mode=direct_cm.")
-            print("  Provide the simscores CSV produced by compute_similarity_scores.py")
-            print("  (e.g. simscores_adversarial_simsac_test_wb_ep_10.csv)")
             raise SystemExit(1)
 
         plot_feature_distributions_from_csv(args.simscores_csv, output_dir)
@@ -577,11 +564,6 @@ def main():
     
     print(" Evaluation Complete!")
     print(f"\nAll results saved to: {output_dir}")
-    print(f"\nGenerated files:")
-    print(f"  - evaluation_results.json")
-    print(f"  - similarity_distributions.png")
-    print(f"  - confusion_matrix.png")
-    print(f"  - tsne_visualization.png")
 
 
 if __name__ == "__main__":

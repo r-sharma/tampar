@@ -393,8 +393,6 @@ def main():
         print(f"  {name}: {cv_scores.mean()*100:.2f}% ± {cv_scores.std()*100:.2f}%")
 
     #  Train on clean, evaluate on clean + adversarial 
-    print("Train on CLEAN  Evaluate on CLEAN + ADVERSARIAL")
-    print("(This is the key test: does the classifier generalise to adv inputs?)")
 
     all_results = []
     trained_models = {}
@@ -419,8 +417,6 @@ def main():
 
     #  Train on CLEAN + ADV, evaluate on adv 
     if df_adv is not None:
-        print("Train on CLEAN + ADVERSARIAL  Evaluate on ADVERSARIAL")
-        print("(Classifier sees both distributions during training)")
 
         X_combined = np.vstack([X_clean, X_adv])
         y_combined  = np.concatenate([y_clean, y_adv])
@@ -445,9 +441,6 @@ def main():
             all_results.append(r)
 
     #  Baseline reminder 
-    print("Baselines (predict_tampering with threshold):")
-    print("  Clean images:        ~84%")
-    print("  Adversarial images:  ~71%   this is what we aim to beat")
 
     #  Feature importance 
     print("Feature Importance (Random Forest, trained on clean)")

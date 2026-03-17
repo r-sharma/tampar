@@ -190,8 +190,6 @@ def main():
 
     BASELINE_ACC = 0.8166
 
-    print("EVALUATION METHOD: train on full dataset  evaluate on same")
-    print("(matches existing comparison_results CSV methodology)")
 
     #  Baseline replication 
     m_base = XGBClassifier(**BASELINE_PARAMS)
@@ -277,8 +275,6 @@ def main():
     print(f"\n Results saved  {args.output_csv}")
 
     #  Summary 
-    print("SUMMARY (accuracy, matching comparison_results methodology):")
-    print(f"  Existing baseline (comparison_results CSV): 81.66%")
     print(f"  v2 same params   (44 feat, 100 trees)    : {r_same['accuracy']*100:.2f}%")
     print(f"  v2 tuned         (44 feat, 600 trees)    : {r_tuned['accuracy']*100:.2f}%")
     if r_adv_train:

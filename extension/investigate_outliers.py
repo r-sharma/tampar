@@ -297,8 +297,6 @@ def main():
 
     print(" Outlier Investigation Complete!")
     print(f"\nAll results saved to: {output_dir}")
-    print(f"\nGenerated files:")
-    print(f"  - detailed_pair_results.csv (all pairs with metadata)")
     print(f"  - negative_outliers.csv (top {args.top_n} negative pairs with high similarity)")
     print(f"  - positive_outliers.csv (top {args.top_n} positive pairs with low similarity)")
     print(f"  - pair_*_visualization.png (visualizations of top outliers)")

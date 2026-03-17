@@ -170,8 +170,6 @@ def load_simsac_pretrained(weights_path, device='cuda'):
         
     except Exception as e:
         print(f" Error loading SimSaC: {e}")
-        print("\nPlease adjust the import path and loading logic")
-        print("based on your TAMPAR repository structure.")
         import traceback
         traceback.print_exc()
         raise

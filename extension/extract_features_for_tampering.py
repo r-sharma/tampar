@@ -499,13 +499,6 @@ def extract_baseline_features(data_root, output_dir):
     print("Extracting Baseline TAMPAR Features (Placeholder)")
     
     
-    print("Note: Baseline feature extraction not implemented")
-    print("In full implementation, would extract:")
-    print("  - MS-SSIM (Multi-Scale Structural Similarity)")
-    print("  - CW-SSIM (Complex Wavelet SSIM)")
-    print("  - HOG (Histogram of Oriented Gradients)")
-    print("  - MAE (Mean Absolute Error)")
-    print("  - etc.")
     
     placeholder_path = output_dir / 'baseline_features_placeholder.txt'
     with open(placeholder_path, 'w') as f:
@@ -613,15 +606,6 @@ def main():
             surface_features, surface_data, tampering_map, output_dir
         )
 
-        print(" Surface-Level Feature Extraction Complete!")
-        print(f"\nGenerated files:")
-        print(f"  - surface_features.csv (for classifier training)")
-        print(f"  - surface_features.pkl (Python object)")
-        print(f"\nNext steps:")
-        print(f"  1. Load surface_features.csv")
-        print(f"  2. Train classifier using cosine_similarity and l2_distance")
-        print(f"  3. Predict is_tampered for each surface")
-        print(f"  4. Evaluate performance vs baseline TAMPAR features")
 
     else:
         # FULL UV MAP FEATURE EXTRACTION (original implementation)
@@ -642,16 +626,6 @@ def main():
         # Create summary
         create_summary(features_dict, feature_pairs, output_dir)
 
-        print(" UV Map Feature Extraction Complete!")
-        print(f"\nGenerated files:")
-        print(f"  - contrastive_features.pkl (full features)")
-        print(f"  - contrastive_features.npz (similarity metrics)")
-        print(f"  - feature_extraction_summary.json")
-        print(f"\nNext steps:")
-        print(f"  1. Load contrastive_features.npz")
-        print(f"  2. Combine with baseline TAMPAR features")
-        print(f"  3. Train decision tree classifier")
-        print(f"  4. Compare performance: baseline vs contrastive vs combined")
 
 
 if __name__ == "__main__":

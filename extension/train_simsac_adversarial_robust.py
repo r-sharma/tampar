@@ -555,8 +555,6 @@ def main():
         )
 
     elif args.mode == 'evaluate':
-        print("Evaluation mode not yet implemented")
-        print("Use src/tools/predict_tampering_adversarial_eval.py with the fine-tuned checkpoint")
 
 
 if __name__ == '__main__':

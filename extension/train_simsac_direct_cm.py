@@ -417,8 +417,6 @@ def main():
     print(f"Weights:        {args.weights_path}")
     print(f"LR decoder:     {args.lr}    (pyramid: {args.lr*0.1:.1e})")
     print(f"Lambda reg:     {args.lambda_reg}  (L2 toward original weights, all params)")
-    print(f"Note: pkls from contrastive_pairs_surface_wb_test already contain")
-    print(f"      both clean and adversarial (adversarial_simsac_test_wb_ep_10) pairs.")
 
     # Load SimSAC
     simsac = load_simsac(args.weights_path, device)

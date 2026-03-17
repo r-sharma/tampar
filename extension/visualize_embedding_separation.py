@@ -215,8 +215,6 @@ def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embeddin
         plot_distributions(pos_dist, neg_dist, title, ax)
 
         # Print statistics
-        print(f"EMBEDDING STATISTICS")
-        print(f"Positive pairs (untampered):")
         print(f"  Mean distance: {pos_dist.mean():.3f}")
         print(f"  Std distance:  {pos_dist.std():.3f}")
         print(f"  Range: [{pos_dist.min():.3f}, {pos_dist.max():.3f}]")

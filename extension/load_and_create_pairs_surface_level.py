@@ -574,9 +574,6 @@ class SurfaceLevelPairCreator:
         print(f"   Created {self.pair_stats['negative_ref_vs_tampered_pred']} pairs")
 
         # Type 3: CLEAN reference vs adversarial (clean surfaces) - MOVED TO POSITIVE PAIRS
-        print("\n3. CLEAN Reference vs Adversarial (Clean Surfaces) - MOVED TO POSITIVE")
-        print("   This pair type is now a POSITIVE pair (see positive pair type #4)")
-        print("   Reason: Same clean surface with adversarial noise should match")
         self.pair_stats['negative_ref_vs_adv_clean'] = 0
         print(f"   Created 0 pairs (moved to positive)")
 

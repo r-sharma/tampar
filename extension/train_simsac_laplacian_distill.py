@@ -333,8 +333,6 @@ class LapDistillTrainer:
         print(f"Training complete!")
         print(f"Best epoch:        {self.best_epoch}")
         print(f"Best combined acc: {self.best_combined:.4f}")
-        print(f"\nNext step — verify with real change map:")
-        print(f"  python src/tools/compute_similarity_scores.py \\")
         print(f"    --checkpoint {output_dir}/best.pth")
         print(f"  Then compare simsac simple_threshold to baseline 70.7%")
 
