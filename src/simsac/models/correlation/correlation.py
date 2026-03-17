@@ -475,7 +475,7 @@ def FunctionCorrelation(tensorFirst, tensorSecond):
 
 class ModuleCorrelation(torch.nn.Module):
     def __init__(self):
-        super(ModuleCorrelation, self).__init__()
+        super().__init__()
 
     # end
 

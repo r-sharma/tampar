@@ -54,7 +54,7 @@ class SimSaC:
             ckpt_name = ckpt_names[0] if ckpt_name == "" else ckpt_name
             checkpoint_file = ROOT / "simsac" / "weight" / ckpt_name
 
-        print(f"Loading SimSaC from: {checkpoint_file}")
+        print(f"Loading SimSaC model from: {checkpoint_file}")
         pretrained_dict = torch.load(checkpoint_file)
         self.model.load_state_dict(pretrained_dict["state_dict"])
         self.model.to(self.device)
