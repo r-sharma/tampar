@@ -16,7 +16,7 @@ from skimage import exposure
 try:
     from src.simsac.inference import SimSaC
 except ImportError as e:
-    print(f"Could not import SimSaC: {repr(e)}")
+    print(f"SimSaC import failed: {repr(e)}")
 from src.tampering.metrics import (
     compute_cwssim,
     compute_hog,
