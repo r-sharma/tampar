@@ -273,7 +273,7 @@ def main():
                        help='Batch size')
     parser.add_argument('--img_size', type=int, default=512,
                        help='Image size')
-    parser.add_argument('--num_workers', type=int, default=4,
+    parser.add_argument('--num_workers', type=int, default=2,
                        help='Number of data loading workers')
 
     parser.add_argument('--projection_dim', type=int, default=512,

@@ -92,8 +92,8 @@ class ContrastivePairsDataset(Dataset):
         }
 
 
-def create_dataloaders(train_pairs_path, val_pairs_path, batch_size=16, 
-                       num_workers=2, target_size=(256, 256)):
+def create_dataloaders(train_pairs_path, val_pairs_path, batch_size=16,
+                       num_workers=4, target_size=(256, 256)):
 
 
     print("Creating DataLoaders")
