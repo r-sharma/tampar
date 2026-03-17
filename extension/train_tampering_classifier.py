@@ -216,7 +216,7 @@ def plot_results(all_results, output_dir: Path):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                 f'{acc:.1f}%', ha='center', va='bottom', fontsize=9)
     plt.tight_layout()
-    plt.savefig(output_dir / 'accuracy_comparison.png', dpi=150)
+    plt.savefig(output_dir / 'accuracy_comparison.png', dpi=200)
     plt.close()
     print(f"\n Saved: {output_dir / 'accuracy_comparison.png'}")
 
@@ -238,7 +238,7 @@ def plot_results(all_results, output_dir: Path):
                 ax.text(j, i, str(cm[i, j]), ha='center', va='center',
                         color='white' if cm[i, j] > cm.max() / 2 else 'black')
     plt.tight_layout()
-    plt.savefig(output_dir / 'confusion_matrices.png', dpi=150)
+    plt.savefig(output_dir / 'confusion_matrices.png', dpi=200)
     plt.close()
     print(f" Saved: {output_dir / 'confusion_matrices.png'}")
 
@@ -271,7 +271,7 @@ def print_feature_importance(model, feature_names, top_n=15, output_dir=None):
         ax.set_xlabel('Importance')
         ax.set_title(f'Top {top_n} Feature Importances (Random Forest)')
         plt.tight_layout()
-        plt.savefig(output_dir / 'feature_importance.png', dpi=150)
+        plt.savefig(output_dir / 'feature_importance.png', dpi=200)
         plt.close()
         print(f" Saved: {output_dir / 'feature_importance.png'}")
 

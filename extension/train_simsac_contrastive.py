@@ -331,7 +331,7 @@ class Trainer:
         
         plt.tight_layout()
         plot_path = output_dir / 'training_progress.png'
-        plt.savefig(plot_path, dpi=150)
+        plt.savefig(plot_path, dpi=200)
         plt.close()
         
         print(f"  Progress plot saved: {plot_path}")

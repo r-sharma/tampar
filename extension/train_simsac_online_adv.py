@@ -493,7 +493,7 @@ class OnlineAdvTrainer:
         axes[3].grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig(output_dir / 'training_progress.png', dpi=150)
+        plt.savefig(output_dir / 'training_progress.png', dpi=200)
         plt.close()
         print(f"  Progress plot saved.")
 
