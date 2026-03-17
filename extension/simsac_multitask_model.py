@@ -224,7 +224,7 @@ if __name__ == "__main__":
 
     # Test forward pass
     print("\nTesting forward pass")
-    batch_size = 4
+    batch_size = 2
     img1 = torch.randn(batch_size, 3, 512, 512).to(device)
     img2 = torch.randn(batch_size, 3, 512, 512).to(device)
     img1_256 = torch.randn(batch_size, 3, 256, 256).to(device)

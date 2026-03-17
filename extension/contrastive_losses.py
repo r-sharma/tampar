@@ -162,7 +162,7 @@ class CombinedLoss(nn.Module):
 if __name__ == "__main__":
     print("Testing Contrastive Loss Functions\n")
     
-    batch_size = 8
+    batch_size = 4
     projection_dim = 128
     
     # Create dummy features
