@@ -1,36 +1,3 @@
-"""
-XGBoost Hyperparameter Tuning for Tampering Detection
-
-Trains XGBoost on clean data, evaluates on adversarial data.
-Searches for optimal hyperparameters via a curated candidate list
-or full GridSearchCV.
-
-Without --grid_search: tries ~20 curated parameter configs, fast.
-With    --grid_search: exhaustive GridSearchCV on clean data (slower).
-
-In both modes: CV is performed on clean data to select params;
-adversarial data is only used for final reporting (no leakage).
-
-Usage:
-    # Quick candidate search (no GridSearchCV):
-    python extension/tune_xgboost_simsac.py \\
-        --clean_csv /path/to/simscores_clean.csv \\
-        --adversarial_csv /path/to/simscores_adversarial.csv \\
-        --output_json best_xgb_params.json
-
-    # Full GridSearchCV:
-    python extension/tune_xgboost_simsac.py \\
-        --clean_csv /path/to/simscores_clean.csv \\
-        --adversarial_csv /path/to/simscores_adversarial.csv \\
-        --grid_search \\
-        --output_json best_xgb_params.json
-
-    # Tune for all compare_types (default: simsac only):
-    python extension/tune_xgboost_simsac.py \\
-        --clean_csv /path/to/simscores_clean.csv \\
-        --adversarial_csv /path/to/simscores_adversarial.csv \\
-        --compare_type all
-"""
 
 import sys
 import json
@@ -171,7 +138,6 @@ def create_pivot(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_features(df: pd.DataFrame, compare_types: list[str]) -> list[str]:
-    """Return feature column names for the given compare_types."""
     all_scores = [n for n in df.columns if n.startswith("score")]
     scores = [s for s in all_scores if s.split("_")[-1] in compare_types]
     scores = [s for s in scores if "_".join(s.split("_")[1:-1]) in METRICS]
@@ -217,9 +183,7 @@ def adv_accuracy(model, X_train, y_train, X_adv, y_adv) -> float:
 # --------------------------------------------------------------------------- #
 
 def candidate_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
-    print(f"\n{'='*70}")
     print(f"Candidate Search  ({len(CANDIDATE_CONFIGS)} configs, {n_cv_splits}-fold CV on clean)")
-    print(f"{'='*70}")
 
     rows = []
     for i, params in enumerate(CANDIDATE_CONFIGS):
@@ -244,9 +208,7 @@ def grid_search(X_clean, y_clean, X_adv, y_adv, n_cv_splits: int = 5):
     total = 1
     for v in GRID_SEARCH_PARAMS.values():
         total *= len(v)
-    print(f"\n{'='*70}")
     print(f"GridSearchCV  ({total} configurations, {n_cv_splits}-fold CV on clean)")
-    print(f"{'='*70}")
     print("This may take a while...")
 
     base = make_base_xgb()
@@ -374,9 +336,7 @@ def main():
     else:
         df_results = candidate_search(X_clean, y_clean, X_adv, y_adv,
                                       n_cv_splits=args.cv_splits)
-        print(f"\n{'='*70}")
         print("Results sorted by adversarial accuracy")
-        print(f"{'='*70}")
         display_cols = ["config", "cv_clean", "adv_acc",
                         "n_estimators", "max_depth", "learning_rate",
                         "subsample", "colsample_bytree", "reg_alpha", "reg_lambda"]
@@ -396,9 +356,7 @@ def main():
                        for k, v in best_params.items()}
         best_adv_acc = float(best_row["adv_acc"])
 
-    print(f"\n{'='*70}")
     print("BEST RESULT")
-    print(f"{'='*70}")
     print(f"  Adversarial accuracy: {best_adv_acc:.4f}  ({best_adv_acc*100:.1f}%)")
     print(f"  Delta vs baseline:    {best_adv_acc - baseline_adv:+.4f}  "
           f"({(best_adv_acc - baseline_adv)*100:+.1f}pp)")

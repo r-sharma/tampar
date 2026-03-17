@@ -1,10 +1,3 @@
-"""
-Task 5: SimSaC Contrastive Fine-tuning
-Dataset and DataLoader implementation
-
-This module provides PyTorch Dataset for loading contrastive pairs.
-"""
-
 import pickle
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -14,21 +7,9 @@ import numpy as np
 
 
 class ContrastivePairsDataset(Dataset):
-    """
-    PyTorch Dataset for contrastive learning pairs.
-    
-    Loads pairs from pickle files created by load_and_create_pairs_v2.py
-    """
     
     def __init__(self, pairs_path, transform=None, target_size=(256, 256)):
-        """
-        Initialize dataset.
-        
-        Args:
-            pairs_path: Path to .pkl file with pairs
-            transform: Optional torchvision transforms
-            target_size: Resize images to this size
-        """
+    
         # Load pairs
         with open(pairs_path, 'rb') as f:
             self.pairs = pickle.load(f)
@@ -50,8 +31,8 @@ class ContrastivePairsDataset(Dataset):
                 transforms.Resize(target_size),
                 transforms.ToTensor(),
                 transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],  # ImageNet mean
-                    std=[0.229, 0.224, 0.225]     # ImageNet std
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]
                 )
             ])
         else:
@@ -61,25 +42,17 @@ class ContrastivePairsDataset(Dataset):
         return len(self.pairs)
     
     def __getitem__(self, idx):
-        """
-        Get a pair.
-
-        Returns:
-            img1: First image tensor [3, H, W]
-            img2: Second image tensor [3, H, W]
-            label: 1 for positive, 0 for negative
-        """
+        
         pair = self.pairs[idx]
 
-        # Get images - support both 'image1'/'image2' and 'surface1'/'surface2' keys
-        # for backward compatibility with both full UV map pairs and surface-level pairs
+        # Get images
         img1 = pair.get('image1', pair.get('surface1'))
         img2 = pair.get('image2', pair.get('surface2'))
 
         if img1 is None or img2 is None:
             raise KeyError(f"Pair must contain either 'image1'/'image2' or 'surface1'/'surface2' keys. Found keys: {list(pair.keys())}")
 
-        # Convert to PIL if they're numpy arrays
+        # Convert to PIL if they are numpy arrays
         if isinstance(img1, np.ndarray):
             img1 = Image.fromarray(img1)
         if isinstance(img2, np.ndarray):
@@ -98,7 +71,6 @@ class ContrastivePairsDataset(Dataset):
         label = torch.tensor(pair['label'], dtype=torch.float32)
 
         # Check if this is an adversarial pair
-        # Look for 'adv' in image2_path or pair_type metadata
         is_adversarial = False
         if 'image2_path' in pair and isinstance(pair['image2_path'], str):
             is_adversarial = 'adv' in pair['image2_path'].lower()
@@ -112,7 +84,6 @@ class ContrastivePairsDataset(Dataset):
         return img1, img2, label, is_adversarial
     
     def get_statistics(self):
-        """Get dataset statistics."""
         return {
             'total_pairs': len(self.pairs),
             'positive_pairs': self.num_positive,
@@ -123,25 +94,9 @@ class ContrastivePairsDataset(Dataset):
 
 def create_dataloaders(train_pairs_path, val_pairs_path, batch_size=16, 
                        num_workers=2, target_size=(256, 256)):
-    """
-    Create train and validation dataloaders.
-    
-    Args:
-        train_pairs_path: Path to train_pairs.pkl
-        val_pairs_path: Path to val_pairs.pkl
-        batch_size: Batch size
-        num_workers: Number of workers for data loading
-        target_size: Image size
-    
-    Returns:
-        train_loader, val_loader, train_dataset, val_dataset
-    """
-    print(f"\n{'='*70}")
+
+
     print("Creating DataLoaders")
-    print(f"{'='*70}")
-    print(f"Batch size: {batch_size}")
-    print(f"Num workers: {num_workers}")
-    print(f"Target size: {target_size}")
     
     # Create datasets
     train_dataset = ContrastivePairsDataset(
@@ -171,7 +126,7 @@ def create_dataloaders(train_pairs_path, val_pairs_path, batch_size=16,
         pin_memory=True
     )
     
-    print(f"\n✓ DataLoaders created")
+    print(f"\n DataLoaders created")
     print(f"  Train batches: {len(train_loader)}")
     print(f"  Val batches: {len(val_loader)}")
     
@@ -193,7 +148,6 @@ if __name__ == "__main__":
     dataset = ContrastivePairsDataset(pairs_path)
     
     # Test loading a batch
-    print(f"\nTesting data loading...")
     img1, img2, label = dataset[0]
     
     print(f"Image 1 shape: {img1.shape}")
@@ -207,4 +161,4 @@ if __name__ == "__main__":
     for key, value in stats.items():
         print(f"  {key}: {value}")
     
-    print(f"\n✓ Dataset test passed!")
+    print(f"\n Dataset test passed!")

@@ -1,17 +1,3 @@
-"""
-Hard Negative Mining for SimSAC Contrastive Learning
-
-This script identifies adversarial tampered surfaces that the fine-tuned model
-incorrectly gives high similarity scores to, and creates a focused dataset of
-these "hard negatives" for additional training.
-
-Usage:
-    python extension/mine_hard_negatives.py \
-        --checkpoint /path/to/phase2_best.pth \
-        --pairs_csv /path/to/pairs.csv \
-        --output_csv hard_negatives.csv \
-        --threshold 0.90
-"""
 
 import sys
 from pathlib import Path
@@ -29,12 +15,6 @@ from extension.simsac_contrastive_model import SimSaCContrastive
 
 
 def compute_pair_similarity(model, image1_path, image2_path, device):
-    """
-    Compute similarity score for a pair of images.
-
-    Returns:
-        similarity: Float similarity score (0-1)
-    """
     # Load images
     img1 = Image.open(image1_path).convert('RGB')
     img2 = Image.open(image2_path).convert('RGB')
@@ -62,19 +42,7 @@ def compute_pair_similarity(model, image1_path, image2_path, device):
 
 
 def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, top_k=None):
-    """
-    Mine hard negative pairs: adversarial tampered surfaces with high similarity.
-
-    Args:
-        checkpoint_path: Path to fine-tuned SimSAC checkpoint
-        pairs_csv: Path to pairs CSV file
-        output_csv: Path to save hard negatives CSV
-        threshold: Similarity threshold (negatives above this are "hard")
-        top_k: Optional - only return top K hardest negatives
-    """
-    print("=" * 80)
     print("HARD NEGATIVE MINING")
-    print("=" * 80)
 
     # Load model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -130,7 +98,6 @@ def mine_hard_negatives(checkpoint_path, pairs_csv, output_csv, threshold=0.90, 
 
     print(f"\n" + "=" * 80)
     print(f"HARD NEGATIVES FOUND")
-    print("=" * 80)
     print(f"Total adversarial tampered pairs: {len(adv_tampered)}")
     print(f"Hard negatives (similarity ≥ {threshold}): {len(hard_negatives)}")
     print(f"Percentage: {100 * len(hard_negatives) / len(adv_tampered):.1f}%")

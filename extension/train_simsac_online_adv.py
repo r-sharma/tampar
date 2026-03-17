@@ -1,67 +1,3 @@
-"""
-SimSAC Online Adversarial Training (On-the-Fly Attack Generation)
-
-Instead of pre-generating adversarial examples offline, this script generates
-adversarial perturbations DURING training for each mini-batch. This is stronger
-than offline adversarial training because:
-
-  1. Adversarial examples always adapt to the CURRENT model state
-  2. Model cannot overfit to fixed pre-generated perturbations
-  3. Provides stronger robustness guarantees (Madry et al., 2018)
-
-How it works per batch:
-  a) Load clean (reference, field) pairs from dataloader
-  b) Generate adv_field = PGD/FGSM(field) targeting SimSAC's change map
-  c) Compute contrastive loss on BOTH (ref, field_clean) and (ref, field_adv)
-  d) Compute change map loss on (ref, field_adv) to directly supervise detection
-  e) Combined loss = loss_clean + adv_weight * loss_adv + lambda_cm * loss_cm
-  f) Backprop and update
-
-Attack target: SimSAC's change map output is MINIMIZED for tampered fields
-  → model thinks tampered = clean → we train to resist this
-
-Change Map Loss (what predict_tampering actually uses):
-  Tampered pairs (label=1): maximize change magnitude  → model detects tampering
-  Clean pairs    (label=0): minimize change magnitude  → model sees no change
-  NOTE: Change map loss only updates the backbone, so it is only effective in
-  Phase 2 (full fine-tune). In Phase 1 (frozen backbone) it computes but
-  contributes zero gradient to backbone weights.
-
-Usage:
-    # Phase 1: Frozen backbone, PGD on-the-fly (contrastive loss only)
-    python extension/train_simsac_online_adv.py \\
-        --phase 1 \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test \\
-        --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_online_adv \\
-        --attack pgd \\
-        --epsilon 0.05 \\
-        --pgd_steps 5 \\
-        --adversarial_weight 3.0 \\
-        --lambda_cm 0.0 \\
-        --epochs 10
-
-    # Phase 2: Full fine-tune, PGD + change map loss
-    python extension/train_simsac_online_adv.py \\
-        --phase 2 \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test \\
-        --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_online_adv \\
-        --attack pgd \\
-        --epsilon 0.05 \\
-        --pgd_steps 5 \\
-        --adversarial_weight 3.0 \\
-        --lambda_cm 1.0 \\
-        --epochs 20
-
-    # No attack (same as train_simsac_contrastive.py - for baseline comparison)
-    python extension/train_simsac_online_adv.py \\
-        --phase 1 \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test \\
-        --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_online_adv \\
-        --attack none
-"""
 
 import os
 import sys
@@ -94,12 +30,6 @@ from src.simsac.models.our_models.SimSaC import SimSaC_Model
 # ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
-    """
-    Monkey-patch SimSAC to remove the internal no_grad() wrapper so that
-    adversarial gradients can flow through the model during training.
-
-    This is the same fix used in generate_adversarial_simsac_targeted.py.
-    """
     def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
         im1_pyr = self.pyramid(im_target, eigth_resolution=True)
         im2_pyr = self.pyramid(im_source, eigth_resolution=True)
@@ -121,20 +51,6 @@ def enable_simsac_gradients(model):
 
 
 def simsac_change_loss(simsac_model, field_img, reference_img):
-    """
-    Compute SimSAC change map loss for adversarial attack.
-
-    Minimizing this loss makes tampered images produce low change maps
-    → detector thinks they are clean (attack succeeds).
-
-    Args:
-        simsac_model: SimSAC model in train mode with gradient patch applied
-        field_img: Field image tensor [1, C, H, W] in [0, 1]
-        reference_img: Reference image tensor [1, C, H, W] in [0, 1]
-
-    Returns:
-        Scalar loss (mean change magnitude)
-    """
     field_512 = F.interpolate(field_img, size=(512, 512), mode='bilinear', align_corners=False)
     ref_512 = F.interpolate(reference_img, size=(512, 512), mode='bilinear', align_corners=False)
     field_256 = F.interpolate(field_img, size=(256, 256), mode='bilinear', align_corners=False)
@@ -159,33 +75,6 @@ def simsac_change_loss(simsac_model, field_img, reference_img):
 
 
 def compute_change_map_loss(simsac_model, img2_adv, img1, labels):
-    """
-    Direct change map supervision loss — trains what predict_tampering ACTUALLY uses.
-
-    This is the key loss missing from pure contrastive training:
-      - Contrastive loss trains the projection head embedding space
-      - Change map loss trains the backbone's change map output directly
-
-    For tampered pairs (label=1): maximize change magnitude → model detects tampering
-    For clean pairs    (label=0): minimize change magnitude → model sees no change
-
-    Loss per sample = -(2*label - 1) * change_magnitude
-      label=1: -(2*1-1) * cm = -cm  (minimize negative → maximize cm)
-      label=0: -(2*0-1) * cm = +cm  (minimize → minimize cm)
-
-    NOTE: Only meaningful in Phase 2 (full fine-tune). In Phase 1 the backbone is
-    frozen so this loss produces zero backbone gradient. It is safe to pass
-    --lambda_cm 0.0 for Phase 1 to avoid the extra forward pass overhead.
-
-    Args:
-        simsac_model: Raw SimSAC model (model.simsac inside SimSaCContrastive)
-        img2_adv:     [B, C, H, W] adversarial field images (detached from attack graph)
-        img1:         [B, C, H, W] reference images
-        labels:       [B] float/long tensor with binary labels (1=tampered, 0=clean)
-
-    Returns:
-        Scalar change map loss (mean over batch)
-    """
     loss_terms = []
     for i in range(img2_adv.shape[0]):
         # Fresh forward pass through backbone (img2_adv is detached so
@@ -200,24 +89,9 @@ def compute_change_map_loss(simsac_model, img2_adv, img1, labels):
 
 
 class OnlineAttackGenerator:
-    """
-    Generates adversarial perturbations on-the-fly during training.
-
-    Attacks the FIELD image (img2) to minimize SimSAC's change map output,
-    making tampered surfaces appear clean to the detector.
-    """
 
     def __init__(self, simsac_model, attack_type='fgsm', epsilon=0.05,
                  pgd_steps=5, pgd_step_size=None, device='cuda'):
-        """
-        Args:
-            simsac_model: The raw SimSAC model (not wrapped in SimSaCContrastive)
-            attack_type: 'fgsm', 'pgd', or 'none'
-            epsilon: Maximum perturbation magnitude
-            pgd_steps: Number of PGD steps (keep small: 3-7 for online training)
-            pgd_step_size: PGD step size (default: epsilon / 4)
-            device: Device
-        """
         self.simsac = simsac_model
         self.simsac = enable_simsac_gradients(self.simsac)
         self.simsac.train()
@@ -233,16 +107,6 @@ class OnlineAttackGenerator:
                   + (f", steps={pgd_steps}" if attack_type == 'pgd' else ""))
 
     def fgsm(self, field_batch, ref_batch):
-        """
-        Single-step FGSM attack on a batch of field images.
-
-        Args:
-            field_batch: [B, C, H, W] field image patches in [0, 1]
-            ref_batch: [B, C, H, W] reference image patches in [0, 1]
-
-        Returns:
-            adv_field_batch: [B, C, H, W] adversarial field images, detached
-        """
         adv_results = []
         for i in range(field_batch.shape[0]):
             field = field_batch[i:i+1].clone().detach().requires_grad_(True)
@@ -260,16 +124,6 @@ class OnlineAttackGenerator:
         return torch.cat(adv_results, dim=0)
 
     def pgd(self, field_batch, ref_batch):
-        """
-        Multi-step PGD attack on a batch of field images.
-
-        Args:
-            field_batch: [B, C, H, W] field image patches in [0, 1]
-            ref_batch: [B, C, H, W] reference image patches in [0, 1]
-
-        Returns:
-            adv_field_batch: [B, C, H, W] adversarial field images, detached
-        """
         adv_results = []
         for i in range(field_batch.shape[0]):
             original = field_batch[i:i+1].clone().detach()
@@ -293,17 +147,6 @@ class OnlineAttackGenerator:
         return torch.cat(adv_results, dim=0)
 
     def generate(self, field_batch, ref_batch):
-        """
-        Generate adversarial examples for a batch.
-
-        Args:
-            field_batch: [B, C, H, W]
-            ref_batch: [B, C, H, W]
-
-        Returns:
-            adv_field_batch: [B, C, H, W] detached adversarial images
-            OR None if attack_type == 'none'
-        """
         if self.attack_type == 'none':
             return None
 
@@ -342,22 +185,6 @@ class OnlineAttackGenerator:
 # ---------------------------------------------------------------------------
 
 class OnlineAdvTrainer:
-    """
-    Trainer that generates adversarial examples on-the-fly per batch.
-
-    Each training step:
-      1. Clean forward pass → contrastive loss_clean
-      2. Generate adv_field = attack(field)  [detached from attack graph]
-      3. Adversarial forward pass → contrastive loss_adv
-      4. Change map forward pass on adv_field → loss_cm  (direct detection signal)
-      5. Total loss = loss_clean + adv_weight * loss_adv + lambda_cm * loss_cm
-      6. Backward + optimizer step
-
-    Change map loss note:
-      Only the backbone weights receive gradient from loss_cm. In Phase 1
-      (frozen backbone) this term contributes zero gradient — set --lambda_cm 0.0
-      for Phase 1 to skip the extra forward pass overhead.
-    """
 
     def __init__(self, model, attack_generator, train_loader, val_loader,
                  config, device='cuda'):
@@ -402,7 +229,6 @@ class OnlineAdvTrainer:
         self.start_epoch = 0
 
     def _forward_loss(self, img1, img2, labels, is_adversarial=None):
-        """Forward pass + contrastive loss."""
         z1, z2 = self.model(img1, img2)
         loss, loss_dict = self.criterion(z1, z2, labels=labels,
                                          is_adversarial=is_adversarial)
@@ -472,7 +298,7 @@ class OnlineAdvTrainer:
             if use_cm_loss and img2_adv is not None:
                 loss_cm = compute_change_map_loss(
                     self.attacker.simsac,
-                    img2_adv.detach(),   # ensure attack graph is fully detached
+                    img2_adv.detach(),
                     img1.detach(),
                     labels.float()
                 )
@@ -538,9 +364,7 @@ class OnlineAdvTrainer:
         cm_active = (lambda_cm > 0.0 and not freeze_backbone
                      and attack_name != 'none')
 
-        print(f"\n{'=' * 70}")
         print(f"Online Adversarial Training - Phase {self.config['phase']}")
-        print(f"{'=' * 70}")
         print(f"Epochs:          {self.config['epochs']}")
         print(f"Learning rate:   {self.config['learning_rate']}")
         print(f"Batch size:      {self.config['batch_size']}")
@@ -593,12 +417,9 @@ class OnlineAdvTrainer:
         )
         self._plot_progress(output_dir)
 
-        print(f"\n{'=' * 70}")
         print(f"Training Complete! Best val loss: {self.best_val_loss:.4f}")
-        print(f"{'=' * 70}")
 
     def _save_checkpoint(self, epoch, output_dir, is_best=False, filename=None):
-        """Save TAMPAR-compatible checkpoint (strips projection head)."""
         if filename is None:
             filename = f"checkpoint_epoch_{epoch+1}.pth"
 
@@ -628,7 +449,6 @@ class OnlineAdvTrainer:
             print(f"  ✓ New best model: {best_path}")
 
     def load_checkpoint(self, checkpoint_path):
-        """Load checkpoint (adds 'simsac.' prefix back for wrapped model)."""
         print(f"\nLoading checkpoint: {checkpoint_path}")
         ckpt = torch.load(checkpoint_path, map_location=self.device)
 
@@ -837,7 +657,7 @@ def main():
     # Online attack generator — uses the raw SimSAC backbone from the model
     if args.attack != 'none':
         attacker = OnlineAttackGenerator(
-            simsac_model=model.simsac,   # raw SimSAC model inside wrapper
+            simsac_model=model.simsac,
             attack_type=args.attack,
             epsilon=args.epsilon,
             pgd_steps=args.pgd_steps,

@@ -32,7 +32,6 @@ class TamperingClassificator:
         self.ids = ids
 
     def build_model(self):
-        """Build classifier model based on model_name."""
         if self.model_name == "simple_threshold":
             # Original: Single threshold (depth=1 decision tree)
             params = {

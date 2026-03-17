@@ -1,24 +1,3 @@
-"""
-Tampering Localizer - Core Module
-
-Generates per-surface heatmaps and localization results for a given parcel,
-showing exactly WHERE tampering occurred on each surface patch.
-
-This module provides:
-  1. Raw SimSAC change maps (heatmaps) per surface patch
-  2. Per-metric similarity scores per surface
-  3. Final tampered/clean decision with confidence per surface
-  4. All intermediate outputs needed by the dashboard
-
-Usage:
-    from extension.tampering_localizer import TamperingLocalizer
-
-    localizer = TamperingLocalizer(simsac_ckpt_path='/path/to/checkpoint.pth')
-    result = localizer.localize(
-        reference_uvmap_path='/path/to/uvmaps/id_01_uvmap.png',
-        query_uvmap_path='/path/to/validation/carpet/id_01_uvmap_gt.png'
-    )
-"""
 
 import sys
 from pathlib import Path
@@ -54,31 +33,29 @@ from src.tampering.utils import get_side_surface_patches
 SURFACE_NAMES = ["top", "left", "center", "right", "bottom"]
 
 # Color maps for heatmap visualization
-HEATMAP_COLORMAP = cv2.COLORMAP_JET      # Blue=clean, Red=tampered
-OVERLAY_ALPHA = 0.5                       # Blend factor for overlay
+HEATMAP_COLORMAP = cv2.COLORMAP_JET
+OVERLAY_ALPHA = 0.5
 
 
 @dataclass
 class SurfaceLocalizationResult:
-    """Result for a single surface patch."""
-    name: str                                          # top/left/center/right/bottom
-    patch_reference: np.ndarray                        # Reference patch (RGB)
-    patch_query: np.ndarray                            # Query patch (RGB)
-    change_map_raw: np.ndarray                         # Raw SimSAC change map (grayscale, 0-255)
-    change_map_colored: np.ndarray                     # JET colormap heatmap (RGB)
-    change_map_overlay: np.ndarray                     # Heatmap blended onto query patch (RGB)
-    diff_map: np.ndarray                               # Simple pixel difference map (grayscale)
-    tampered_region_mask: np.ndarray                   # Binary mask of tampered regions
-    metrics: Dict[str, float]                          # msssim, cwssim, ssim, hog, mae
-    tampering_score: float                             # 0-1, higher = more tampered
-    is_tampered: bool                                  # Final binary decision
-    confidence: float                                  # Confidence in decision (0-1)
-    tampered_area_pct: float                           # % of surface area flagged as tampered
+    name: str
+    patch_reference: np.ndarray
+    patch_query: np.ndarray
+    change_map_raw: np.ndarray
+    change_map_colored: np.ndarray
+    change_map_overlay: np.ndarray
+    diff_map: np.ndarray
+    tampered_region_mask: np.ndarray
+    metrics: Dict[str, float]
+    tampering_score: float
+    is_tampered: bool
+    confidence: float
+    tampered_area_pct: float
 
 
 @dataclass
 class ParcelLocalizationResult:
-    """Complete localization result for an entire parcel."""
     parcel_id: int
     reference_uvmap_path: str
     query_uvmap_path: str
@@ -91,12 +68,6 @@ class ParcelLocalizationResult:
 
 
 class TamperingLocalizer:
-    """
-    Generates tampering heatmaps and localization for a parcel.
-
-    Uses SimSAC change maps as the primary heatmap source,
-    combined with pixel-level difference maps and per-surface metrics.
-    """
 
     def __init__(
         self,
@@ -104,14 +75,6 @@ class TamperingLocalizer:
         tampering_threshold: float = 0.75,
         change_map_threshold: int = 200,
     ):
-        """
-        Args:
-            simsac_ckpt_path: Path to fine-tuned SimSAC checkpoint.
-                              If None, uses default synthetic.pth
-            tampering_threshold: Similarity score below which a surface is tampered.
-                                 Use 0.75 based on evaluation results.
-            change_map_threshold: Pixel threshold for binarizing SimSAC change maps (0-255)
-        """
         self.simsac_ckpt_path = simsac_ckpt_path
         self.tampering_threshold = tampering_threshold
         self.change_map_threshold = change_map_threshold
@@ -126,7 +89,6 @@ class TamperingLocalizer:
             print(f"  Using default: synthetic.pth")
 
     def _load_uvmap(self, path: str) -> np.ndarray:
-        """Load UV map image as RGB numpy array."""
         img = cv2.imread(str(path))
         if img is None:
             raise FileNotFoundError(f"Could not load image: {path}")
@@ -135,14 +97,6 @@ class TamperingLocalizer:
     def _generate_change_map(
         self, patch_ref: np.ndarray, patch_query: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Run SimSAC inference to generate raw change map for a surface patch.
-
-        Returns:
-            change_map_raw: Grayscale change map (0-255), brighter = more change
-            change_map_colored: JET colormap version (RGB)
-            change_map_overlay: Heatmap blended onto query patch (RGB)
-        """
         # Run SimSAC inference
         imgs = self.simsac.inference(
             patch_ref.astype(np.uint8),
@@ -171,13 +125,6 @@ class TamperingLocalizer:
     def _generate_diff_map(
         self, patch_ref: np.ndarray, patch_query: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Generate simple pixel-level absolute difference map.
-
-        Returns:
-            diff_gray: Grayscale difference map (0-255)
-            diff_colored: JET colormap version (RGB)
-        """
         # Convert to grayscale for comparison
         ref_gray = cv2.cvtColor(patch_ref.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
         query_gray = cv2.cvtColor(patch_query.astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
@@ -195,7 +142,6 @@ class TamperingLocalizer:
     def _compute_surface_metrics(
         self, patch_ref: np.ndarray, patch_query: np.ndarray
     ) -> Dict[str, float]:
-        """Compute all similarity metrics for a surface patch pair."""
         metrics = {}
         for metric_name in METRICS:
             compute_fn = {
@@ -216,15 +162,6 @@ class TamperingLocalizer:
         return metrics
 
     def _compute_tampering_score(self, metrics: Dict[str, float]) -> float:
-        """
-        Compute a single tampering score (0-1) from all metrics.
-        Higher score = more likely tampered.
-
-        Logic:
-          - MSSSIM, SSIM, CWSSIM: High value = similar = clean → invert for tamper score
-          - MAE: High value = different = tampered → use directly
-          - HOG: High value = different = tampered → normalize and use directly
-        """
         scores = []
 
         # Similarity metrics: invert (1 - score = tamper likelihood)
@@ -247,17 +184,6 @@ class TamperingLocalizer:
     def _compute_tampered_area(
         self, change_map: np.ndarray, threshold: int = 128
     ) -> Tuple[np.ndarray, float]:
-        """
-        Compute binary mask and percentage of tampered area.
-
-        Args:
-            change_map: Grayscale change map (0-255), brighter = more change
-            threshold: Pixel threshold for tampered region
-
-        Returns:
-            mask: Binary mask (255 = tampered, 0 = clean)
-            pct: Percentage of area flagged as tampered
-        """
         mask = (change_map > threshold).astype(np.uint8) * 255
 
         # Morphological cleanup: remove noise
@@ -274,17 +200,6 @@ class TamperingLocalizer:
         patch_query: np.ndarray,
         surface_name: str,
     ) -> SurfaceLocalizationResult:
-        """
-        Full localization for a single surface patch.
-
-        Args:
-            patch_ref: Reference surface patch (RGB, 400x400)
-            patch_query: Query surface patch (RGB, 400x400)
-            surface_name: Name of surface (top/left/center/right/bottom)
-
-        Returns:
-            SurfaceLocalizationResult with all maps and scores
-        """
         # 1. Generate SimSAC change map (primary heatmap)
         change_raw, change_colored, change_overlay = self._generate_change_map(
             patch_ref, patch_query
@@ -303,7 +218,7 @@ class TamperingLocalizer:
         is_tampered = tampering_score > (1.0 - self.tampering_threshold)
 
         # 6. Confidence: distance from decision boundary (0.5)
-        confidence = abs(tampering_score - 0.5) * 2.0  # 0-1 range
+        confidence = abs(tampering_score - 0.5) * 2.0
 
         # 7. Compute tampered area mask and percentage
         tampered_mask, tampered_pct = self._compute_tampered_area(change_raw)
@@ -330,17 +245,6 @@ class TamperingLocalizer:
         query_uvmap_path: str,
         parcel_id: int = 0,
     ) -> ParcelLocalizationResult:
-        """
-        Full localization for an entire parcel (all surface patches).
-
-        Args:
-            reference_uvmap_path: Path to ground truth UV map (uvmaps/id_XX_uvmap.png)
-            query_uvmap_path: Path to query UV map (validation/background/id_XX_uvmap_*.png)
-            parcel_id: Parcel ID for bookkeeping
-
-        Returns:
-            ParcelLocalizationResult with results for all surfaces
-        """
         print(f"\nLocalizing parcel {parcel_id}...")
         print(f"  Reference : {reference_uvmap_path}")
         print(f"  Query     : {query_uvmap_path}")

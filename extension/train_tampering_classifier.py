@@ -1,42 +1,3 @@
-"""
-Tampering Classifier using RF / XGBoost on rich similarity features.
-
-Replaces the single-threshold predict_tampering with a learned classifier
-that combines:
-  1. SimSAC/Canny/Laplacian/Plain/MeanChannel similarity scores from
-     compute_similarity_scores.py CSV (per surface, multiple metrics)
-  2. Projection head cosine similarity from the fine-tuned SimSACContrastive
-     model (robust to white-box attacks on the change map)
-
-Why this works better on adversarial images:
-  - Adversarial attack suppresses SimSAC change map only
-  - Canny/Laplacian features are unaffected (attack wasn't designed to fool them)
-  - Projection head cosine similarity is also unaffected
-  - RF/XGBoost learns to rely on the non-suppressed features when needed
-
-Usage:
-    # Step 1: Generate CSV for clean images (already done)
-    #   python src/tools/compute_similarity_scores.py
-    #   → out_imgs/simscores_final.csv
-
-    # Step 2: Generate CSV for adversarial images
-    #   (patch IMAGE_ROOT to adversarial folder, re-run compute_similarity_scores)
-    #   → out_imgs/simscores_adversarial.csv
-
-    # Step 3: Train + evaluate classifier
-    python extension/train_tampering_classifier.py \\
-        --clean_csv /content/drive/.../simscores_final.csv \\
-        --adv_csv   /content/drive/.../simscores_adversarial.csv \\
-        --checkpoint /content/drive/.../simsac_weights_online_adv/phase2_best.pth \\
-        --output_dir /content/drive/.../classifier_results
-
-    # Step 4: Run without projection head features (CSV only, faster)
-    python extension/train_tampering_classifier.py \\
-        --clean_csv /content/drive/.../simscores_final.csv \\
-        --adv_csv   /content/drive/.../simscores_adversarial.csv \\
-        --no_proj_head \\
-        --output_dir /content/drive/.../classifier_results
-"""
 
 import sys
 import argparse
@@ -82,17 +43,6 @@ METRICS       = ['msssim', 'cwssim', 'ssim', 'hog', 'mae']
 
 
 def pivot_csv_to_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Pivot the compute_similarity_scores CSV into one row per (parcel_id, view, sideface).
-
-    Each row gets columns like:
-        simsac_ssim, simsac_msssim, canny_ssim, laplacian_mae, ...
-
-    Returns:
-        DataFrame with columns: parcel_id, view, sideface_name, tampered,
-                                 <compare_type>_<metric> for all combinations,
-                                 dataset_split, background
-    """
     # Filter to known compare types
     df = df[df['compare_type'].isin(COMPARE_TYPES)].copy()
 
@@ -113,7 +63,6 @@ def pivot_csv_to_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_and_pivot(csv_path: str, tag: str = '') -> pd.DataFrame:
-    """Load CSV from compute_similarity_scores.py and pivot to feature rows."""
     print(f"\nLoading {tag} CSV: {csv_path}")
     df = pd.read_csv(csv_path, index_col=0)
     print(f"  Raw rows: {len(df)}, tampered: {df['tampered'].sum()}, "
@@ -131,16 +80,6 @@ def load_and_pivot(csv_path: str, tag: str = '') -> pd.DataFrame:
 
 def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
                                 weights_path: str, device: str) -> pd.Series:
-    """
-    Run fine-tuned SimSACContrastive model on each unique UV map pair in df
-    and return a Series of cosine similarities indexed by (parcel_id, view).
-
-    The 'view' column is the relative path to the field UV map image.
-    The GT UV map is looked up from UVMAP_DIR.
-
-    Returns:
-        Series indexed by (parcel_id, view) → cosine_similarity float
-    """
     import torch
     import torch.nn.functional as F
     from torchvision import transforms
@@ -185,7 +124,7 @@ def extract_proj_head_features(df: pd.DataFrame, checkpoint: str,
     with torch.no_grad():
         for _, row in unique_pairs.iterrows():
             parcel_id = int(row['parcel_id'])
-            view = row['view']   # relative path to field UV map
+            view = row['view']
 
             # GT UV map path
             gt_uvmap_path = UVMAP_DIR / f"id_{str(parcel_id).zfill(2)}_uvmap.png"
@@ -223,7 +162,6 @@ FEATURE_COLS = [f"{ct}_{m}" for ct in COMPARE_TYPES for m in METRICS]
 
 
 def get_xy(df: pd.DataFrame) -> tuple:
-    """Extract feature matrix X and label vector y from pivoted DataFrame."""
     available = [c for c in FEATURE_COLS if c in df.columns]
     if 'proj_head_cosine_sim' in df.columns:
         available += ['proj_head_cosine_sim']
@@ -241,7 +179,6 @@ def get_xy(df: pd.DataFrame) -> tuple:
 
 def evaluate_model(name, model, X_train, y_train, X_test, y_test,
                    test_label='test'):
-    """Train and evaluate one classifier. Returns metrics dict."""
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     y_prob = (model.predict_proba(X_test)[:, 1]
@@ -269,7 +206,6 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test,
 
 
 def plot_results(all_results, output_dir: Path):
-    """Plot accuracy comparison and confusion matrices."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Accuracy bar chart
@@ -319,11 +255,10 @@ def plot_results(all_results, output_dir: Path):
     # Feature importance (RF)
     rf_results = [r for r in all_results if 'RF' in r['name'] and hasattr(r.get('model'), 'feature_importances_')]
     if rf_results:
-        pass  # handled separately in main
+        pass
 
 
 def print_feature_importance(model, feature_names, top_n=15, output_dir=None):
-    """Print and plot top feature importances from RF."""
     if not hasattr(model, 'feature_importances_'):
         # Pipeline — get underlying estimator
         try:
@@ -464,17 +399,13 @@ def main():
         )
 
     # ── Cross-validation on clean data ───────────────────────────────────────
-    print(f"\n{'='*65}")
     print("5-Fold Cross-Validation on Clean Data")
-    print(f"{'='*65}")
     for name, clf in classifiers.items():
         cv_scores = cross_val_score(clf, X_clean, y_clean, cv=5, scoring='accuracy')
         print(f"  {name}: {cv_scores.mean()*100:.2f}% ± {cv_scores.std()*100:.2f}%")
 
     # ── Train on clean, evaluate on clean + adversarial ──────────────────────
-    print(f"\n{'='*65}")
     print("Train on CLEAN → Evaluate on CLEAN + ADVERSARIAL")
-    print(f"{'='*65}")
     print("(This is the key test: does the classifier generalise to adv inputs?)")
 
     all_results = []
@@ -500,9 +431,7 @@ def main():
 
     # ── Train on CLEAN + ADV, evaluate on adv ────────────────────────────────
     if df_adv is not None:
-        print(f"\n{'='*65}")
         print("Train on CLEAN + ADVERSARIAL → Evaluate on ADVERSARIAL")
-        print(f"{'='*65}")
         print("(Classifier sees both distributions during training)")
 
         X_combined = np.vstack([X_clean, X_adv])
@@ -528,16 +457,12 @@ def main():
             all_results.append(r)
 
     # ── Baseline reminder ────────────────────────────────────────────────────
-    print(f"\n{'='*65}")
     print("Baselines (predict_tampering with threshold):")
     print("  Clean images:        ~84%")
     print("  Adversarial images:  ~71%  ← this is what we aim to beat")
-    print(f"{'='*65}")
 
     # ── Feature importance ───────────────────────────────────────────────────
-    print(f"\n{'='*65}")
     print("Feature Importance (Random Forest, trained on clean)")
-    print(f"{'='*65}")
     rf_model = trained_models.get('RF')
     if rf_model is not None:
         print_feature_importance(rf_model, feat_names, top_n=15,
@@ -563,13 +488,11 @@ def main():
         json.dump(summary, f, indent=2)
     print(f"\n✓ Results saved: {results_path}")
 
-    print(f"\n{'='*65}")
     print("Done! Generated files:")
     print(f"  {output_dir}/accuracy_comparison.png")
     print(f"  {output_dir}/confusion_matrices.png")
     print(f"  {output_dir}/feature_importance.png")
     print(f"  {output_dir}/classifier_results.json")
-    print(f"{'='*65}")
 
 
 if __name__ == '__main__':

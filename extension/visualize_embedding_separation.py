@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""
-Visualize embedding separation before and after fine-tuning.
-
-This script shows how well the model can distinguish between positive pairs
-(untampered) and negative pairs (tampered) by plotting distance distributions.
-
-Better separation = better accuracy
-
-Usage:
-    # Before fine-tuning (baseline SimSAC)
-    python visualize_embedding_separation.py \
-        --pairs_file data/adversarial_pairs_carpet/adversarial_pairs.pkl \
-        --checkpoint none \
-        --output before_finetuning.png
-
-    # After fine-tuning
-    python visualize_embedding_separation.py \
-        --pairs_file data/adversarial_pairs_carpet/adversarial_pairs.pkl \
-        --checkpoint checkpoints/simsac_robust/best_model.pth \
-        --output after_finetuning.png
-
-    # Compare both
-    python visualize_embedding_separation.py \
-        --pairs_file data/adversarial_pairs_carpet/adversarial_pairs.pkl \
-        --checkpoint checkpoints/simsac_robust/best_model.pth \
-        --output comparison.png \
-        --compare_baseline
-"""
 
 import argparse
 from pathlib import Path
@@ -60,27 +32,6 @@ from train_simsac_adversarial_robust import SimSaCRobust
 
 
 def compute_embeddings(pairs, model, device='cuda'):
-    """
-    Compute embeddings for all pairs using SimSAC.
-
-    This function:
-    1. Runs each (reference, field) pair through SimSAC to get change maps
-    2. Projects change maps to low-dimensional embeddings via projection head
-    3. Returns embeddings for computing pairwise distances
-
-    The quality of separation between positive/negative embeddings
-    directly correlates with classification accuracy.
-
-    Args:
-        pairs: List of pair dicts
-        model: SimSaCRobust model (contains SimSAC + projection head)
-        device: Device to use
-
-    Returns:
-        embeddings: (N, D) numpy array - feature embeddings
-        labels: (N,) numpy array (0=untampered, 1=tampered)
-        is_adversarial: (N,) numpy array (bool)
-    """
     model.eval()
 
     embeddings = []
@@ -125,13 +76,6 @@ def compute_embeddings(pairs, model, device='cuda'):
 
 
 def compute_pairwise_distances(embeddings, labels):
-    """
-    Compute pairwise distances between embeddings.
-
-    Returns:
-        positive_distances: Distances between pairs with same label
-        negative_distances: Distances between pairs with different labels
-    """
     from scipy.spatial.distance import pdist, squareform
 
     # Compute all pairwise distances
@@ -154,15 +98,6 @@ def compute_pairwise_distances(embeddings, labels):
 
 
 def plot_distributions(positive_dist, negative_dist, title, ax):
-    """
-    Plot distance distributions for positive and negative pairs.
-
-    Args:
-        positive_dist: Distances for positive pairs
-        negative_dist: Distances for negative pairs
-        title: Plot title
-        ax: Matplotlib axis
-    """
     # Compute KDE for smooth curves
     if len(positive_dist) > 1:
         try:
@@ -211,15 +146,6 @@ def plot_distributions(positive_dist, negative_dist, title, ax):
 
 
 def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embedding_separation.png', compare_baseline=False):
-    """
-    Visualize embedding separation.
-
-    Args:
-        pairs_file: Path to adversarial pairs pickle
-        checkpoint_path: Path to fine-tuned checkpoint (None = baseline)
-        output_path: Output image path
-        compare_baseline: If True, show before/after comparison
-    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
@@ -263,9 +189,7 @@ def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embeddin
         sep_after = abs(neg_dist_finetuned.mean() - pos_dist_finetuned.mean())
         improvement = ((sep_after - sep_before) / sep_before) * 100
 
-        print(f"\n{'='*80}")
         print(f"IMPROVEMENT METRICS")
-        print(f"{'='*80}")
         print(f"Separation before: {sep_before:.3f}")
         print(f"Separation after:  {sep_after:.3f}")
         print(f"Improvement:       {improvement:+.1f}%")
@@ -293,9 +217,7 @@ def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embeddin
         plot_distributions(pos_dist, neg_dist, title, ax)
 
         # Print statistics
-        print(f"\n{'='*80}")
         print(f"EMBEDDING STATISTICS")
-        print(f"{'='*80}")
         print(f"Positive pairs (untampered):")
         print(f"  Mean distance: {pos_dist.mean():.3f}")
         print(f"  Std distance:  {pos_dist.std():.3f}")

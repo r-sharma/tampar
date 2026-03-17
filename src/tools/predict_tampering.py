@@ -88,21 +88,6 @@ def save_surface_predictions(
     compare_types: list,
     output_path: str,
 ):
-    """
-    Save per-surface predictions to a CSV file.
-
-    Columns:
-        parcel_id    - extracted from the id string
-        surface      - top/left/center/right/bottom
-        view         - original image path
-        actual       - ground truth (0=clean, 1=tampered)
-        predicted    - model prediction (0=clean, 1=tampered)
-        confidence   - probability of being tampered (0-1)
-        correct      - whether prediction matched ground truth
-        tampering    - tampering type code (te, wh, le, etc.)
-        predictor    - predictor type used
-        compare_type - comparison method used
-    """
     X = df_data[scores].to_numpy().astype(float)
     y_true = df_data["tampered"].to_numpy().astype(int)
     ids = df_data["id"].to_numpy()
@@ -373,9 +358,7 @@ def main():
     # Run each predictor and collect results
     all_results = []
     for predictor_type in predictor_types:
-        print(f"\n{'='*70}")
         print(f"Training with predictor: {predictor_type.upper()}")
-        print(f"{'='*70}")
 
         try:
             df_results = train_predictor(
@@ -396,15 +379,12 @@ def main():
     if len(all_results) > 0:
         df_combined = pd.concat(all_results, ignore_index=True)
         df_combined.to_csv(args.output, index=False)
-        print(f"\n{'='*70}")
         print(f"Results saved to: {args.output}")
-        print(f"{'='*70}")
 
         # Print summary comparison
         if len(all_results) > 1:
             print("\n" + "="*70)
             print("CLASSIFIER COMPARISON SUMMARY")
-            print("="*70)
             # Show best accuracy for each predictor
             # Use correct column names from evaluate.py
             agg_dict = {'accuracy': 'max'}

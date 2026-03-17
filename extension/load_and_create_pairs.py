@@ -1,23 +1,3 @@
-"""
-Task 4: Load Existing UV Maps and Create Contrastive Pairs
-FIXED VERSION - Handles both sample and full TAMPAR dataset structures
-
-Sample dataset structure:
-validation/
-├── id_01_20230516_142710.jpg
-├── id_01_20230516_142710_uvmap_pred.png
-├── id_01_20230516_142710_uvmap_gt.png
-└── ...
-
-Full dataset structure:
-validation/
-└── background_0/
-    ├── 0_0_0_uvmap_pred.png
-    └── ...
-
-Usage:
-    python load_and_create_pairs_v2.py --data_root /content/tampar/data/tampar_sample
-"""
 
 import os
 import json
@@ -35,27 +15,15 @@ from torchvision import transforms
 
 
 class TAMPARDatasetLoader:
-    """
-    Load and explore existing UV maps from TAMPAR dataset.
-    Handles both sample and full dataset structures.
-    """
     
     def __init__(self, data_root):
-        """
-        Initialize dataset loader.
-        
-        Args:
-            data_root: Path to TAMPAR dataset
-        """
         self.data_root = Path(data_root)
         self.uvmaps_dir = self.data_root / 'uvmaps'
         
         # Check if this is full dataset or sample
         self.is_sample = 'sample' in str(data_root)
         
-        print(f"\n{'='*70}")
         print(f"TAMPAR Dataset Loader (v2 - Fixed for Sample Dataset)")
-        print(f"{'='*70}")
         print(f"Data root: {self.data_root}")
         print(f"Is sample dataset: {self.is_sample}")
         print(f"UV maps directory: {self.uvmaps_dir}")
@@ -64,10 +32,7 @@ class TAMPARDatasetLoader:
         self.metadata = {}
         
     def explore_structure(self):
-        """Explore and print dataset structure."""
-        print(f"\n{'='*70}")
         print("Exploring Dataset Structure")
-        print(f"{'='*70}")
         
         # Check what exists
         print("\nDirectories found:")
@@ -143,15 +108,7 @@ class TAMPARDatasetLoader:
                     print(f"  Keys: {list(data.keys())[:5]}")
     
     def load_reference_uvmaps(self):
-        """
-        Load reference UV maps from uvmaps/ folder.
-        
-        Returns:
-            Dictionary mapping parcel_id -> UV map image
-        """
-        print(f"\n{'='*70}")
         print("Loading Reference UV Maps")
-        print(f"{'='*70}")
         
         if not self.uvmaps_dir.exists():
             print("✗ uvmaps/ directory not found")
@@ -162,7 +119,7 @@ class TAMPARDatasetLoader:
         
         for uv_file in tqdm(uv_files, desc="Loading reference UV maps"):
             # Filename can be: <parcel_id>.png OR id_01_uvmap.png
-            parcel_id = uv_file.stem  # Keep full stem as ID
+            parcel_id = uv_file.stem
             
             try:
                 uv_map = Image.open(uv_file).convert('RGB')
@@ -186,19 +143,7 @@ class TAMPARDatasetLoader:
         return uv_maps
     
     def load_split_uvmaps(self, split='validation'):
-        """
-        Load predicted and ground truth UV maps from test/validation split.
-        Handles both sample dataset (flat structure) and full dataset (background subdirs).
-        
-        Args:
-            split: 'test' or 'validation'
-        
-        Returns:
-            Dictionary with UV map data organized by parcel_id
-        """
-        print(f"\n{'='*70}")
         print(f"Loading {split.upper()} UV Maps")
-        print(f"{'='*70}")
         
         split_dir = self.data_root / split
         if not split_dir.exists():
@@ -226,9 +171,7 @@ class TAMPARDatasetLoader:
         uv_data = {k: dict(v) for k, v in uv_data.items()}
         
         # Summary
-        print(f"\n{'='*70}")
         print(f"Summary - {split.upper()} Split")
-        print(f"{'='*70}")
         print(f"Total unique parcels: {len(uv_data)}")
         
         for parcel_id, data in sorted(uv_data.items()):
@@ -242,7 +185,6 @@ class TAMPARDatasetLoader:
         return uv_data
     
     def _load_flat_structure(self, split_dir, uv_data):
-        """Load UV maps from flat directory structure (sample dataset)."""
         # Find all UV map files
         uv_pred_files = sorted(split_dir.glob('*_uvmap_pred.png'))
         uv_gt_files = sorted(split_dir.glob('*_uvmap_gt.png'))
@@ -259,7 +201,7 @@ class TAMPARDatasetLoader:
             
             if len(parts) >= 2:
                 # parcel_id = id_01, timestamp = 20230516_142710
-                parcel_id = f"{parts[0]}_{parts[1]}"  # e.g., "id_01"
+                parcel_id = f"{parts[0]}_{parts[1]}"
                 timestamp = '_'.join(parts[2:]) if len(parts) > 2 else "unknown"
                 
                 try:
@@ -298,7 +240,6 @@ class TAMPARDatasetLoader:
                     print(f"\n✗ Error loading {uv_file}: {e}")
     
     def _load_background_structure(self, split_dir, subdirs, uv_data):
-        """Load UV maps from background subdirectory structure (full dataset)."""
         print(f"Found {len(subdirs)} background(s): {[b.name for b in subdirs]}")
         
         for background in subdirs:
@@ -351,22 +292,19 @@ class TAMPARDatasetLoader:
                         print(f"\n✗ Error loading {uv_file}: {e}")
     
     def visualize_samples(self, num_samples=None):
-        """Visualize sample UV maps - shows ALL parcels if num_samples is None."""
         
         # Determine how many samples to show
         if 'reference' in self.uv_maps and self.uv_maps['reference']:
             total_parcels = len(self.uv_maps['reference'])
             if num_samples is None:
-                num_samples = total_parcels  # Show ALL parcels
+                num_samples = total_parcels
             else:
                 num_samples = min(num_samples, total_parcels)
         else:
             print("✗ No reference UV maps to visualize")
             return
         
-        print(f"\n{'='*70}")
         print(f"Visualizing {num_samples} UV Maps (Total available: {total_parcels})")
-        print(f"{'='*70}")
         
         fig, axes = plt.subplots(num_samples, 3, figsize=(12, 4*num_samples))
         if num_samples == 1:
@@ -438,37 +376,15 @@ class TAMPARDatasetLoader:
 
 
 class AugmentationPipeline:
-    """
-    Augmentation pipeline for creating positive pairs.
-    Applies realistic transformations that preserve parcel identity.
-    """
     
     def __init__(self, rotation_range=5, brightness_range=0.1, 
                  contrast_range=0.1, noise_std=0.02):
-        """
-        Initialize augmentation pipeline.
-        
-        Args:
-            rotation_range: Max rotation in degrees
-            brightness_range: Brightness variation (±)
-            contrast_range: Contrast variation (±)
-            noise_std: Gaussian noise standard deviation
-        """
         self.rotation_range = rotation_range
         self.brightness_range = brightness_range
         self.contrast_range = contrast_range
         self.noise_std = noise_std
     
     def augment(self, image):
-        """
-        Apply random augmentation to an image.
-        
-        Args:
-            image: PIL Image
-        
-        Returns:
-            Augmented PIL Image
-        """
         # Convert to PIL if needed
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
@@ -497,19 +413,8 @@ class AugmentationPipeline:
 
 
 class ContrastivePairCreator:
-    """
-    Create positive and negative pairs for contrastive learning.
-    """
     
     def __init__(self, loader, augmentor=None, random_seed=42):
-        """
-        Initialize pair creator.
-        
-        Args:
-            loader: TAMPARDatasetLoader instance with loaded UV maps
-            augmentor: AugmentationPipeline instance
-            random_seed: Random seed for reproducibility
-        """
         self.loader = loader
         self.augmentor = augmentor or AugmentationPipeline()
         random.seed(random_seed)
@@ -520,19 +425,7 @@ class ContrastivePairCreator:
     
     def create_positive_pairs(self, strategies=['same_parcel', 'ref_vs_pred', 'augmented'], 
                              num_pairs=100):
-        """
-        Create positive pairs using multiple strategies.
-        
-        Args:
-            strategies: List of strategies to use
-            num_pairs: Target number of positive pairs
-        
-        Returns:
-            List of positive pair dictionaries
-        """
-        print(f"\n{'='*70}")
         print("Creating Positive Pairs")
-        print(f"{'='*70}")
         print(f"Strategies: {strategies}")
         print(f"Target pairs: {num_pairs}")
         
@@ -570,7 +463,6 @@ class ContrastivePairCreator:
         return positive_pairs
     
     def _create_same_parcel_pairs(self, split):
-        """Create pairs from same parcel, different captures."""
         pairs = []
         
         if split not in self.loader.uv_maps:
@@ -590,7 +482,7 @@ class ContrastivePairCreator:
                         pairs.append({
                             'image1': pred_uvs[i]['image'],
                             'image2': pred_uvs[j]['image'],
-                            'label': 1,  # Positive
+                            'label': 1,
                             'parcel_id': parcel_id,
                             'type': 'same_parcel_different_capture',
                             'metadata': {
@@ -602,7 +494,6 @@ class ContrastivePairCreator:
         return pairs
     
     def _create_ref_vs_pred_pairs(self, split):
-        """Create pairs: reference UV vs predicted UV."""
         pairs = []
         
         if 'reference' not in self.loader.uv_maps or split not in self.loader.uv_maps:
@@ -628,7 +519,7 @@ class ContrastivePairCreator:
                     pairs.append({
                         'image1': ref_uv,
                         'image2': pred_data['image'],
-                        'label': 1,  # Positive
+                        'label': 1,
                         'parcel_id': parcel_id,
                         'type': 'reference_vs_predicted',
                         'metadata': {
@@ -640,7 +531,6 @@ class ContrastivePairCreator:
         return pairs
     
     def _create_augmented_pairs(self, split, num_variants=2):
-        """Create pairs: original vs augmented version."""
         pairs = []
         
         if split not in self.loader.uv_maps:
@@ -660,7 +550,7 @@ class ContrastivePairCreator:
                     pairs.append({
                         'image1': orig_image,
                         'image2': aug_image,
-                        'label': 1,  # Positive
+                        'label': 1,
                         'parcel_id': parcel_id,
                         'type': 'original_vs_augmented',
                         'metadata': {
@@ -672,19 +562,7 @@ class ContrastivePairCreator:
         return pairs
     
     def create_negative_pairs(self, strategies=['different_parcels'], num_pairs=100):
-        """
-        Create negative pairs.
-        
-        Args:
-            strategies: List of strategies to use
-            num_pairs: Target number of negative pairs
-        
-        Returns:
-            List of negative pair dictionaries
-        """
-        print(f"\n{'='*70}")
         print("Creating Negative Pairs")
-        print(f"{'='*70}")
         print(f"Strategies: {strategies}")
         print(f"Target pairs: {num_pairs}")
         
@@ -710,7 +588,6 @@ class ContrastivePairCreator:
         return negative_pairs
     
     def _create_different_parcel_pairs(self, split, num_pairs):
-        """Create pairs from different parcels."""
         pairs = []
         
         if split not in self.loader.uv_maps:
@@ -744,7 +621,7 @@ class ContrastivePairCreator:
                 pairs.append({
                     'image1': uv1['image'],
                     'image2': uv2['image'],
-                    'label': 0,  # Negative
+                    'label': 0,
                     'parcel_id': f"{parcel1_id}_vs_{parcel2_id}",
                     'type': 'different_parcels',
                     'metadata': {
@@ -758,13 +635,10 @@ class ContrastivePairCreator:
         return pairs
     
     def visualize_pairs(self, num_examples=20, output_dir=None):
-        """Visualize example pairs with augmentation details."""
         if output_dir is None:
             output_dir = self.loader.data_root
         
-        print(f"\n{'='*70}")
         print(f"Visualizing {num_examples} Example Pairs")
-        print(f"{'='*70}")
         
         # Visualize positive pairs
         if self.positive_pairs:
@@ -861,19 +735,10 @@ class ContrastivePairCreator:
             plt.close()
     
     def save_pairs(self, output_dir, train_split=0.8):
-        """
-        Save pairs as PyTorch-ready dataset.
-        
-        Args:
-            output_dir: Directory to save pairs
-            train_split: Fraction for training (rest is validation)
-        """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"\n{'='*70}")
         print("Saving Pairs Dataset")
-        print(f"{'='*70}")
         print(f"Output directory: {output_dir}")
         
         # Combine all pairs
@@ -923,7 +788,6 @@ class ContrastivePairCreator:
 
 
 def main():
-    """Main execution."""
     parser = argparse.ArgumentParser(
         description="Load TAMPAR UV maps and create contrastive pairs (v2)"
     )
@@ -998,9 +862,7 @@ def main():
     
     # Create pairs if requested
     if args.create_pairs:
-        print(f"\n{'='*70}")
         print("CREATING CONTRASTIVE PAIRS")
-        print(f"{'='*70}")
         
         # Initialize pair creator
         augmentor = AugmentationPipeline(
@@ -1053,16 +915,12 @@ def main():
             train_split=0.8
         )
         
-        print(f"\n{'='*70}")
         print("✓ Pair Creation Complete!")
-        print(f"{'='*70}")
         print(f"\nDataset saved:")
         print(f"  Train: {train_path}")
         print(f"  Val: {val_path}")
     
-    print(f"\n{'='*70}")
     print("✓ All Tasks Complete!")
-    print(f"{'='*70}")
     print(f"\nData loaded:")
     print(f"  Reference UV maps: {len(loader.uv_maps.get('reference', {}))}")
     if args.split in loader.uv_maps:

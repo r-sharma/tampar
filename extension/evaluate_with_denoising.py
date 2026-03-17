@@ -1,25 +1,3 @@
-"""
-Evaluate adversarial attack effectiveness WITH denoising defense.
-
-This script applies denoising (bilateral filter) to adversarial UV maps before
-computing similarity scores, testing if denoising can recover accuracy.
-
-Usage:
-    # Test denoising defense against Strategy 1 attack
-    python extension/evaluate_with_denoising.py \
-        --adversarial_dir /path/to/adversarial_strategy1_carpet \
-        --uvmaps_dir /path/to/uvmaps \
-        --output_csv simscores_adversarial_denoised.csv \
-        --denoising_method bilateral \
-        --denoising_strength medium
-
-    # Then evaluate
-    python src/tools/predict_tampering_adversarial_eval.py \
-        --clean_csv simscores_validation_carpet_only.csv \
-        --adversarial_csv simscores_adversarial_denoised.csv \
-        --gt_keypoints \
-        --output_csv results_with_denoising.csv
-"""
 
 import sys
 from pathlib import Path
@@ -37,17 +15,6 @@ from src.tampering.parcel import PATCH_ORDER
 
 
 def denoise_uvmap(uvmap, method='bilateral', strength='medium'):
-    """
-    Apply denoising to UV map to remove adversarial perturbations.
-
-    Args:
-        uvmap: UV map as numpy array [H, W, C]
-        method: Denoising method ('bilateral', 'nlm', 'median', 'gaussian')
-        strength: Denoising strength ('light', 'medium', 'heavy')
-
-    Returns:
-        Denoised UV map
-    """
     # Strength parameters
     strength_params = {
         'light': {'bilateral': (3, 30, 30), 'nlm': 5, 'median': 3, 'gaussian': (3, 0.5)},
@@ -91,19 +58,6 @@ def compute_similarity_with_denoising(
     denoising_method='bilateral',
     denoising_strength='medium'
 ):
-    """
-    Compute similarity scores with denoising preprocessing.
-
-    Args:
-        field_path: Path to field UV map (possibly adversarial)
-        reference_path: Path to reference UV map
-        compare_types: List of compare types to use
-        denoising_method: Denoising method
-        denoising_strength: Denoising strength
-
-    Returns:
-        Dictionary of similarity scores by sideface and metric
-    """
     # Load images
     field_img = cv2.imread(str(field_path))
     field_img = cv2.cvtColor(field_img, cv2.COLOR_BGR2RGB)
@@ -137,23 +91,10 @@ def process_adversarial_dataset(
     denoising_method='bilateral',
     denoising_strength='medium'
 ):
-    """
-    Process adversarial dataset with denoising and compute similarity scores.
-
-    Args:
-        adversarial_dir: Directory with adversarial UV maps
-        uvmaps_dir: Directory with reference UV maps
-        output_csv: Output CSV file
-        compare_types: List of compare types
-        denoising_method: Denoising method
-        denoising_strength: Denoising strength
-    """
     adversarial_path = Path(adversarial_dir)
     uvmaps_path = Path(uvmaps_dir)
 
-    print(f"\n{'='*80}")
     print(f"Computing similarity scores WITH denoising")
-    print(f"{'='*80}")
     print(f"Adversarial directory: {adversarial_dir}")
     print(f"Reference directory: {uvmaps_dir}")
     print(f"Denoising method: {denoising_method}")
@@ -216,8 +157,8 @@ def process_adversarial_dataset(
                             "compare_type": compare_type,
                             "sideface_name": sideface_name,
                             "background": background_name,
-                            "tampering": "",  # Will be filled from mapping
-                            "tampered": False,  # Will be filled from mapping
+                            "tampering": "",
+                            "tampered": False,
                         }
                         result.update(metrics)
                         results.append(result)

@@ -26,13 +26,6 @@ class SimSaC:
     _instances: dict = {}
 
     def __init__(self, ckpt_name: str = "", ckpt_path: str = None):
-        """
-        Initialize SimSaC model.
-
-        Args:
-            ckpt_name: Name of checkpoint file in simsac/weight/ folder (default: synthetic.pth)
-            ckpt_path: Full path to checkpoint file (overrides ckpt_name if provided)
-        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = SimSaC_Model(
             batch_norm=True,
@@ -69,16 +62,6 @@ class SimSaC:
 
     @classmethod
     def get_instance(cls, ckpt_name: str = "", ckpt_path: str = None):
-        """
-        Get singleton instance of SimSaC.
-
-        Args:
-            ckpt_name: Name of checkpoint file (default: synthetic.pth)
-            ckpt_path: Full path to checkpoint file (overrides ckpt_name)
-
-        Returns:
-            SimSaC instance
-        """
         # Use ckpt_path as key if provided, otherwise ckpt_name
         cache_key = ckpt_path if ckpt_path else (ckpt_names[0] if ckpt_name == "" else ckpt_name)
 
@@ -107,7 +90,7 @@ class SimSaC:
             imgs.append(change_)
         flow_ = flow_to_image(img2vis(flow, rescale=False))
         imgs.append(flow_)
-        return imgs  # change1, change2, flow
+        return imgs
 
 
 def img2vis(img, rescale=True):

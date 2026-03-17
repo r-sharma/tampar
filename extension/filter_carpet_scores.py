@@ -1,33 +1,9 @@
-"""
-Filter similarity scores to include only carpet background.
-
-This helps with faster iteration when testing attacks on a single background.
-
-Usage:
-    python filter_carpet_scores.py \
-        --clean_csv data/misc/simscores_validation.csv \
-        --adversarial_csv data/misc/simscores_adversarial_carpet_strategy1.csv \
-        --background carpet \
-        --output_clean data/misc/simscores_validation_carpet_only.csv \
-        --output_adversarial data/misc/simscores_adversarial_carpet_only.csv
-"""
 
 import argparse
 import pandas as pd
 
 
 def filter_by_background(df, background_name, is_adversarial=False):
-    """
-    Filter dataframe to include only specified background.
-
-    Args:
-        df: Input dataframe with 'background' or 'view' column
-        background_name: Name of background to filter (e.g., 'carpet')
-        is_adversarial: Whether this is adversarial data (background has _adv_ suffix)
-
-    Returns:
-        Filtered dataframe
-    """
     if is_adversarial:
         # Adversarial backgrounds are named like "carpet_adv_fgsm", "carpet_adv_pgd"
         mask = df['background'].str.contains(f'{background_name}_adv')
@@ -88,9 +64,7 @@ def main():
     print(f"  Adversarial: {args.output_adversarial}")
 
     # Show statistics
-    print(f"\n{'='*60}")
     print(f"SUMMARY")
-    print(f"{'='*60}")
     print(f"Background: {args.background}")
     print(f"Clean samples: {len(df_clean_filtered)}")
     print(f"Adversarial samples: {len(df_adv_filtered)}")

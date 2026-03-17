@@ -1,32 +1,3 @@
-"""
-Strategy 1: Similarity-Targeted Adversarial Attack
-
-This attack directly optimizes similarity metrics (SSIM, MAE, MSSSIM) instead of
-attacking SimSAC's intermediate change output.
-
-Goal: Make tampered images appear more similar to reference UV maps by adding
-small adversarial perturbations that fool the similarity metrics.
-
-Usage:
-    # Generate adversarial images for carpet only (fast testing)
-    python generate_adversarial_similarity_targeted.py \
-        --data_dir /path/to/validation \
-        --uvmaps_dir /path/to/uvmaps \
-        --output_dir /path/to/adversarial_validation_similarity \
-        --folders carpet \
-        --attack both \
-        --epsilon 0.15 \
-        --pgd_steps 10
-
-    # Generate for all backgrounds except base
-    python generate_adversarial_similarity_targeted.py \
-        --data_dir /path/to/validation \
-        --output_dir /path/to/adversarial_validation_similarity \
-        --exclude_folders base \
-        --attack both \
-        --epsilon 0.2 \
-        --pgd_steps 20
-"""
 
 import sys
 from pathlib import Path
@@ -45,16 +16,6 @@ import math
 
 
 def pytorch_ssim(img1, img2, window_size=11):
-    """
-    Differentiable SSIM implementation in PyTorch.
-
-    Args:
-        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
-        window_size: Size of Gaussian window
-
-    Returns:
-        SSIM value (higher is more similar, range [-1, 1], typically [0, 1])
-    """
     C1 = 0.01 ** 2
     C2 = 0.03 ** 2
 
@@ -89,69 +50,20 @@ def pytorch_ssim(img1, img2, window_size=11):
 
 
 def pytorch_mae(img1, img2):
-    """
-    Differentiable MAE implementation in PyTorch.
-
-    Args:
-        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
-
-    Returns:
-        MAE value (lower is more similar, range [0, 1])
-    """
     return torch.mean(torch.abs(img1 - img2))
 
 
 def pytorch_mse(img1, img2):
-    """
-    Differentiable MSE implementation in PyTorch.
-
-    Args:
-        img1, img2: Tensors of shape [B, C, H, W] in range [0, 1]
-
-    Returns:
-        MSE value (lower is more similar, range [0, 1])
-    """
     return torch.mean((img1 - img2) ** 2)
 
 
 class SimilarityTargetedAttackGenerator:
-    """
-    Generate adversarial UV maps by directly targeting similarity metrics.
-
-    Unlike SimSAC-targeted attacks that attack the change detection output,
-    this attack directly optimizes SSIM, MAE, and MSSSIM to make tampered
-    images appear more similar to reference UV maps.
-    """
 
     def __init__(self, epsilon=0.15, device='cuda'):
-        """
-        Args:
-            epsilon: Maximum perturbation magnitude (L-infinity norm)
-            device: Device to use for computation
-        """
         self.epsilon = epsilon
         self.device = device
 
     def similarity_loss(self, field_img, reference_img):
-        """
-        Compute loss based on similarity metrics using differentiable PyTorch ops.
-
-        Goal: MAXIMIZE similarity to reference (hide tampering)
-
-        Loss = -SSIM + MAE + MSE
-
-        By minimizing this loss:
-        - SSIM increases (more structurally similar)
-        - MAE decreases (less pixel difference)
-        - MSE decreases (less squared error)
-
-        Args:
-            field_img: Field UV map tensor [1, C, H, W] (normalized 0-1)
-            reference_img: Reference UV map tensor [1, C, H, W] (normalized 0-1)
-
-        Returns:
-            loss: Scalar loss value (differentiable)
-        """
         # Compute differentiable similarity metrics
         ssim_value = pytorch_ssim(field_img, reference_img)
         mae_value = pytorch_mae(field_img, reference_img)
@@ -165,16 +77,6 @@ class SimilarityTargetedAttackGenerator:
         return loss
 
     def fgsm_attack_similarity(self, field_img, reference_img):
-        """
-        FGSM attack targeting similarity metrics.
-
-        Args:
-            field_img: Field image tensor [1, C, H, W] (normalized 0-1)
-            reference_img: Reference UV map tensor [1, C, H, W] (normalized 0-1)
-
-        Returns:
-            Adversarial field image tensor
-        """
         field_img = field_img.clone().detach()
         reference_img = reference_img.clone().detach()
         field_img.requires_grad = True
@@ -202,18 +104,6 @@ class SimilarityTargetedAttackGenerator:
         return adv_field
 
     def pgd_attack_similarity(self, field_img, reference_img, steps=10, step_size=None):
-        """
-        PGD attack targeting similarity metrics.
-
-        Args:
-            field_img: Field image tensor [1, C, H, W]
-            reference_img: Reference UV map tensor [1, C, H, W]
-            steps: Number of PGD iterations
-            step_size: Step size per iteration
-
-        Returns:
-            Adversarial field image
-        """
         if step_size is None:
             step_size = self.epsilon / 4
 
@@ -242,18 +132,6 @@ class SimilarityTargetedAttackGenerator:
         return adv_field
 
     def generate_adversarial_uvmap(self, field_path, reference_path, attack_type='fgsm', pgd_steps=10):
-        """
-        Generate adversarial UV map from a field and reference image.
-
-        Args:
-            field_path: Path to field UV map
-            reference_path: Path to reference UV map
-            attack_type: 'fgsm' or 'pgd'
-            pgd_steps: Number of PGD iterations (if using PGD)
-
-        Returns:
-            adversarial_image: Numpy array (H, W, C) in 0-255 range
-        """
         # Load images
         field_img = Image.open(field_path).convert('RGB')
         reference_img = Image.open(reference_path).convert('RGB')
@@ -281,16 +159,6 @@ class SimilarityTargetedAttackGenerator:
 
 
 def find_reference_uvmap(parcel_id, uvmaps_dir):
-    """
-    Find the reference UV map for a given parcel ID.
-
-    Args:
-        parcel_id: Parcel ID (e.g., "01", "12")
-        uvmaps_dir: Path to uvmaps directory
-
-    Returns:
-        Path to reference UV map, or None if not found
-    """
     uvmaps_path = Path(uvmaps_dir)
     pattern = f"id_{parcel_id}_*.png"
 
@@ -311,20 +179,6 @@ def generate_adversarial_dataset(
     epsilon=0.15,
     pgd_steps=10
 ):
-    """
-    Generate adversarial dataset for validation data.
-
-    Args:
-        data_dir: Input validation directory
-        uvmaps_dir: Directory with reference UV maps
-        output_dir: Output directory for adversarial data
-        attack_type: 'fgsm', 'pgd', or 'both'
-        folders: List of specific folders to include (e.g., ['carpet', 'table'])
-        exclude_folders: List of folders to exclude (e.g., ['base'])
-        uvmap_types: List of UV map types to process (['gt', 'pred'])
-        epsilon: Perturbation magnitude
-        pgd_steps: Number of PGD iterations
-    """
     data_path = Path(data_dir)
     uvmaps_path = Path(uvmaps_dir)
     output_path = Path(output_dir)
@@ -354,9 +208,7 @@ def generate_adversarial_dataset(
         attacks_to_run.append('pgd')
 
     for attack_method in attacks_to_run:
-        print(f"\n{'='*80}")
         print(f"Generating {attack_method.upper()} adversarial examples")
-        print(f"{'='*80}")
 
         # Create attack generator
         attacker = SimilarityTargetedAttackGenerator(epsilon=epsilon, device=device)
@@ -388,7 +240,7 @@ def generate_adversarial_dataset(
                     # Extract parcel ID from filename
                     # Format: id_01_20230523_155225_uvmap_gt.png
                     filename_parts = uvmap_file.stem.split('_')
-                    parcel_id = filename_parts[1]  # "01"
+                    parcel_id = filename_parts[1]
 
                     # Find corresponding reference UV map
                     reference_path = find_reference_uvmap(parcel_id, uvmaps_path)
@@ -417,10 +269,8 @@ def generate_adversarial_dataset(
 
             print(f"  ✓ Successful: {successful}, ✗ Failed: {failed}")
 
-    print(f"\n{'='*80}")
     print(f"Adversarial dataset generation complete!")
     print(f"Output directory: {output_path}")
-    print(f"{'='*80}")
 
 
 def main():

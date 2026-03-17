@@ -1,21 +1,3 @@
-"""
-Tampering Detection Visualisation — XGBoost on SimSAC features
-
-Loads a simscores CSV (output of compute_similarity_scores.py), trains
-XGBoost on SimSAC compare-type features, then generates a figure showing
-N correctly detected tampered surfaces and M correctly detected clean surfaces.
-
-Usage:
-    python extension/visualize_tampering_samples.py \\
-        --csv /path/to/simscores.csv \\
-        --output tampering_visualisation.png \\
-        --n_tampered 3 --n_clean 2 \\
-        --uvmap_dir /path/to/uvmaps \\
-        --adv_dir /path/to/image/root
-
-Each row in the figure shows one correctly classified surface:
-    Reference patch  →  Adversarial patch  →  SimSAC metric bars  →  XGBoost probability gauge
-"""
 
 import argparse
 from pathlib import Path
@@ -45,8 +27,8 @@ METRIC_TAMPERED_IS_LOW = {
     'msssim': True,
     'cwssim': True,
     'ssim':   True,
-    'hog':    False,  # higher HOG → more tampered in this dataset
-    'mae':    False,  # higher error → more tampered
+    'hog':    False,
+    'mae':    False,
 }
 
 COLORS = {
@@ -104,19 +86,6 @@ def load_simsac_features(csv_path):
 # ---------------------------------------------------------------------------
 
 def compute_metric_thresholds(df):
-    """
-    Compute per-metric thresholds from the dataset for bar coloring.
-
-    Uses the median of each class separately:
-      - similarity metrics (METRIC_TAMPERED_IS_LOW=True):
-          threshold = median of tampered samples
-          (below threshold → tampered signal → orange)
-      - error metrics (METRIC_TAMPERED_IS_LOW=False):
-          threshold = median of clean samples
-          (above threshold → tampered signal → orange)
-
-    Falls back to overall median if a class has no samples.
-    """
     thresholds = {}
     for m in METRICS:
         if METRIC_TAMPERED_IS_LOW[m]:
@@ -167,20 +136,6 @@ def train_xgboost(df):
 
 def select_samples(df, probs, preds, n_tampered=3, n_clean=2,
                    random_state=None, top_k_factor=10):
-    """
-    Pick correctly classified tampered + clean surfaces.
-
-    Samples randomly from the top (n * top_k_factor) most confident
-    correct predictions, so results vary each run while still coming
-    from reasonably well-classified examples.
-
-    Parameters
-    ----------
-    random_state : int or None
-        Fixed seed for reproducibility. None (default) = different each run.
-    top_k_factor : int
-        Pool size multiplier. Pool = top (n * top_k_factor) confident samples.
-    """
     df = df.copy()
     df['prob']       = probs
     df['pred']       = preds
@@ -188,10 +143,6 @@ def select_samples(df, probs, preds, n_tampered=3, n_clean=2,
     df['confidence'] = (df['prob'] - 0.5).abs()
 
     def pick_diverse(pool, n):
-        """
-        Randomly pick n rows from pool, ensuring no duplicate
-        (parcel_id, sideface_name) and preferring different parcel_ids.
-        """
         # Restrict to top confident, then shuffle for variety
         top_k = min(len(pool), max(n * top_k_factor, n))
         pool  = pool.head(top_k).sample(frac=1, random_state=random_state)
@@ -256,14 +207,6 @@ def _load_image(path):
 
 
 def _load_adv_image(adv_dir, row):
-    """
-    Try multiple path constructions to find the adversarial UV map.
-
-    Attempts (in order):
-      1. adv_dir / row['view']                          (full relative path)
-      2. adv_dir / row['background'] / filename         (background subfolder + filename)
-      3. adv_dir / filename                             (flat — filename only)
-    """
     view       = str(row.get('view', ''))
     background = str(row.get('background', ''))
     filename   = Path(view).name
@@ -282,7 +225,6 @@ def _load_adv_image(adv_dir, row):
 
 
 def get_surface_patch(image, sideface_name):
-    """Extract the named surface patch from a UV map via simple 3×3 grid split."""
     h, w   = image.shape[:2]
     ph, pw = h // 3, w // 3
     idx    = PATCH_INDEX[sideface_name]
@@ -316,7 +258,7 @@ def plot_metric_bar(ax, row, importances, metric_thresholds=None,
     for i, metric in enumerate(METRICS):
         val         = float(row[metric])
         imp         = importances.get(metric, 0.0)
-        val_display = min(max(val, 0.0), 1.0)   # clamp for bar display
+        val_display = min(max(val, 0.0), 1.0)
 
         # Use data-driven threshold if available, else fall back to 0.5
         threshold = metric_thresholds[metric] if metric_thresholds else 0.5
@@ -324,9 +266,9 @@ def plot_metric_bar(ax, row, importances, metric_thresholds=None,
         # Orange = metric pointing in the tampered direction (relative to threshold)
         # Blue   = metric pointing in the clean direction
         if METRIC_TAMPERED_IS_LOW[metric]:
-            tampered_signal = val < threshold    # below median tampered → orange
+            tampered_signal = val < threshold
         else:
-            tampered_signal = val > threshold    # above median clean → orange
+            tampered_signal = val > threshold
 
         bar_color = COLORS['tampered_bar'] if tampered_signal else COLORS['neutral_bar']
         alpha     = 0.4 + 0.6 * imp
@@ -393,13 +335,9 @@ def plot_probability_gauge(ax, prob, pred, ground_truth,
 
 def build_figure(selected, importances, output_path,
                  uvmap_dir=None, adv_dir=None, metric_thresholds=None):
-    """
-    One row per selected surface:
-      [label | reference patch | → | adversarial patch | metric bars | prob gauge]
-    """
     n = len(selected)
 
-    ROW_H      = 2.2   # inches per surface row
+    ROW_H      = 2.2
     TOP_MARGIN = 0.7
     BOT_MARGIN = 0.55
     fig_w      = 17.0

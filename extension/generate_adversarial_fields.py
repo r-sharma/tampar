@@ -1,77 +1,3 @@
-"""
-Generate Adversarial UV Maps
-
-Creates adversarial perturbations directly on UV maps using FGSM/PGD attacks
-to challenge tampering detection. This creates realistic-looking but adversarially
-perturbed UV maps that significantly reduce detection accuracy.
-
-The attacks use gradient-based perturbations combined with hallucination losses
-to create artifacts that confuse both traditional and deep learning-based detectors.
-
-Usage:
-    # FGSM attack, generate both GT and Pred UV maps
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack fgsm \
-        --uvmap_types gt pred \
-        --epsilon 0.05
-
-    # PGD attack, only GT UV maps
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack pgd \
-        --uvmap_types gt \
-        --epsilon 0.08 \
-        --pgd_steps 20
-
-    # C&W attack (optimization-based), both UV map types
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack cw \
-        --uvmap_types gt pred \
-        --epsilon 0.05 \
-        --cw_steps 100 \
-        --cw_c 1.0
-
-    # All three attacks, both UV map types
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack all \
-        --uvmap_types gt pred \
-        --epsilon 0.05
-
-    # Generate for carpet folder only
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack all \
-        --filter_folders carpet \
-        --epsilon 0.05
-
-    # Texture only (no smoothness penalty) - Recommended for stronger attacks
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack all \
-        --filter_folders carpet \
-        --epsilon 0.05 \
-        --texture_weight 1.0 \
-        --smoothness_weight 0.0
-
-    # Maximize roughness (negative smoothness)
-    python generate_adversarial_fields.py \
-        --data_dir /content/tampar/data/tampar_sample/validation \
-        --output_dir /content/tampar/data/tampar_sample/adversarial_validation \
-        --attack cw \
-        --filter_folders carpet \
-        --epsilon 0.05 \
-        --texture_weight 1.0 \
-        --smoothness_weight -1.0
-"""
 
 import os
 import sys
@@ -88,30 +14,12 @@ import cv2
 
 
 class AdversarialUVMapGenerator:
-    """Generate adversarial perturbations on UV maps."""
 
     def __init__(self, epsilon=0.05, device='cuda'):
-        """
-        Initialize adversarial generator.
-
-        Args:
-            epsilon: Maximum perturbation magnitude (L-infinity norm)
-            device: Device to use
-        """
         self.epsilon = epsilon
         self.device = device
 
     def fgsm_attack(self, image, gradient):
-        """
-        Fast Gradient Sign Method (FGSM) attack.
-
-        Args:
-            image: Original image tensor [C, H, W]
-            gradient: Gradient of loss w.r.t. image
-
-        Returns:
-            Adversarial image
-        """
         # Get sign of gradient
         sign_gradient = gradient.sign()
 
@@ -127,20 +35,6 @@ class AdversarialUVMapGenerator:
         return adv_image
 
     def pgd_attack(self, image, loss_fn, steps=10, step_size=None):
-        """
-        Projected Gradient Descent (PGD) attack.
-
-        More powerful iterative version of FGSM.
-
-        Args:
-            image: Original image tensor [C, H, W]
-            loss_fn: Function that computes loss for the image
-            steps: Number of PGD iterations
-            step_size: Step size per iteration (default: epsilon/4)
-
-        Returns:
-            Adversarial image
-        """
         if step_size is None:
             step_size = self.epsilon / 4
 
@@ -169,23 +63,6 @@ class AdversarialUVMapGenerator:
         return adv_image
 
     def cw_attack(self, image, loss_fn, steps=100, c=1.0, kappa=0, learning_rate=0.01):
-        """
-        Carlini-Wagner (C&W) L2 attack.
-
-        More sophisticated optimization-based attack that finds minimal perturbations.
-        Uses tanh transformation to ensure valid pixel values without clamping.
-
-        Args:
-            image: Original image tensor [C, H, W]
-            loss_fn: Function that computes loss for the image
-            steps: Number of optimization iterations (default: 100)
-            c: Regularization constant balancing perturbation size vs attack success
-            kappa: Confidence parameter (higher = stronger attack)
-            learning_rate: Learning rate for Adam optimizer
-
-        Returns:
-            Adversarial image
-        """
         # Initialize perturbation in tanh space for automatic clamping
         # w is optimized in unbounded space, tanh(w) maps to [0,1]
         w = torch.zeros_like(image, requires_grad=True, device=self.device)
@@ -231,11 +108,6 @@ class AdversarialUVMapGenerator:
         return adv_image
 
     def texture_loss(self, image):
-        """
-        Loss that encourages texture variations to create hallucinations.
-
-        Maximizes high-frequency content to create artifacts.
-        """
         # Compute gradients (high-frequency content)
         dx = image[:, :, 1:] - image[:, :, :-1]
         dy = image[:, 1:, :] - image[:, :-1, :]
@@ -246,11 +118,6 @@ class AdversarialUVMapGenerator:
         return loss
 
     def smoothness_loss(self, image):
-        """
-        Loss that encourages smoothness violations.
-
-        Creates unnatural smooth regions that confuse detection.
-        """
         # Compute second-order gradients
         dx = image[:, :, 1:] - image[:, :, :-1]
         dy = image[:, 1:, :] - image[:, :-1, :]
@@ -266,29 +133,13 @@ class AdversarialUVMapGenerator:
     def generate_adversarial_uvmap(self, uvmap_path, attack_type='fgsm',
                                    texture_weight=1.0, smoothness_weight=1.0,
                                    pgd_steps=10, cw_steps=100, cw_c=1.0, cw_lr=0.01):
-        """
-        Generate adversarial version of UV map.
-
-        Args:
-            uvmap_path: Path to original UV map
-            attack_type: 'fgsm', 'pgd', or 'cw'
-            texture_weight: Weight for texture loss (high-freq artifacts). 0=disable, negative=reduce texture
-            smoothness_weight: Weight for smoothness loss. 0=disable, positive=smooth, negative=rough
-            pgd_steps: Number of PGD steps if using PGD
-            cw_steps: Number of C&W optimization steps
-            cw_c: C&W regularization constant
-            cw_lr: C&W learning rate
-
-        Returns:
-            Adversarial UV map as numpy array
-        """
         # Load UV map
         uvmap = Image.open(uvmap_path).convert('RGB')
         uvmap_np = np.array(uvmap).astype(np.float32) / 255.0
 
         # Convert to tensor
         uvmap_tensor = torch.from_numpy(uvmap_np).permute(2, 0, 1).to(self.device)
-        uvmap_tensor = uvmap_tensor.unsqueeze(0)  # [1, C, H, W]
+        uvmap_tensor = uvmap_tensor.unsqueeze(0)
 
         if attack_type == 'fgsm':
             # FGSM: Single-step attack
@@ -336,30 +187,11 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                                 texture_weight=1.0, smoothness_weight=1.0,
                                 pgd_steps=10, cw_steps=100, cw_c=1.0, cw_lr=0.01,
                                 filter_folders=None):
-    """
-    Generate adversarial UV maps directly.
-
-    Args:
-        data_dir: Input data directory (e.g., validation folder)
-        output_dir: Output directory for adversarial data
-        attack_type: 'fgsm', 'pgd', 'cw', or 'all'
-        uvmap_types: List of UV map types to perturb ('gt', 'pred', or both)
-        epsilon: Perturbation magnitude
-        texture_weight: Weight for texture loss (high-freq artifacts)
-        smoothness_weight: Weight for smoothness loss
-        pgd_steps: Number of PGD iterations
-        cw_steps: Number of C&W optimization steps
-        cw_c: C&W regularization constant
-        cw_lr: C&W learning rate
-        filter_folders: List of folder names to process (e.g., ['carpet']). If None, process all.
-    """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n{'='*70}")
     print("Adversarial UV Map Generation")
-    print(f"{'='*70}")
     print(f"Input directory:  {data_dir}")
     print(f"Output directory: {output_dir}")
     print(f"Attack type(s):   {attack_type}")
@@ -380,7 +212,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     if attack_type == 'all':
         attacks = ['fgsm', 'pgd', 'cw']
     elif attack_type == 'both':
-        attacks = ['fgsm', 'pgd']  # backward compatibility
+        attacks = ['fgsm', 'pgd']
     else:
         attacks = [attack_type]
 
@@ -465,9 +297,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
                 except Exception as e:
                     print(f"  Error generating {uvmap_path.name}: {e}")
 
-    print(f"\n{'='*70}")
     print("✓ Adversarial dataset generation complete!")
-    print(f"{'='*70}")
     print(f"\nOutput directory: {output_dir}")
 
     # Print statistics

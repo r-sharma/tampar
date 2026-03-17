@@ -1,32 +1,3 @@
-"""
-Explainability Dashboard for TAMPAR Tampering Detection
-
-Generates a comprehensive visual dashboard for a single parcel showing:
-  - Reference vs Query UV maps
-  - Per-surface SimSAC heatmaps (WHERE tampering occurred)
-  - Per-surface pixel difference maps
-  - Per-metric similarity scores with bar charts
-  - Tampered region masks
-  - Overall parcel verdict with confidence
-
-Usage (command line):
-    python extension/explainability_dashboard.py \
-        --parcel_id 1 \
-        --reference_uvmap /path/to/uvmaps/id_01_uvmap.png \
-        --query_uvmap /path/to/validation/carpet/id_01_uvmap_gt.png \
-        --output_dir /path/to/output \
-        --checkpoint /path/to/phase2_best.pth
-
-Usage (Python):
-    from extension.explainability_dashboard import ExplainabilityDashboard
-    from extension.tampering_localizer import TamperingLocalizer
-
-    localizer = TamperingLocalizer(simsac_ckpt_path='/path/to/checkpoint.pth')
-    dashboard = ExplainabilityDashboard(output_dir='/path/to/output')
-
-    result = localizer.localize(reference_uvmap_path, query_uvmap_path, parcel_id=1)
-    dashboard.generate(result)
-"""
 
 import sys
 from pathlib import Path
@@ -53,9 +24,9 @@ from extension.tampering_localizer import (
 # ─────────────────────────────────────────────────────
 # Visual Style Constants
 # ─────────────────────────────────────────────────────
-COLOR_TAMPERED = '#FF4444'     # Red for tampered
-COLOR_CLEAN    = '#44BB44'     # Green for clean
-COLOR_NEUTRAL  = '#888888'     # Grey for neutral
+COLOR_TAMPERED = '#FF4444'
+COLOR_CLEAN    = '#44BB44'
+COLOR_NEUTRAL  = '#888888'
 METRIC_COLORS  = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B2']
 FONT_TITLE     = {'fontsize': 13, 'fontweight': 'bold'}
 FONT_SUBTITLE  = {'fontsize': 10, 'fontweight': 'bold'}
@@ -72,9 +43,6 @@ METRIC_META = {
 
 
 class ExplainabilityDashboard:
-    """
-    Generates explainability visualizations for tampering detection results.
-    """
 
     def __init__(self, output_dir: str = "outputs/dashboard"):
         self.output_dir = Path(output_dir)
@@ -85,12 +53,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def generate(self, result: ParcelLocalizationResult) -> Dict[str, Path]:
-        """
-        Generate all dashboard visualizations for a parcel.
-
-        Returns:
-            Dictionary of {plot_name: saved_path}
-        """
         print(f"\nGenerating dashboard for parcel {result.parcel_id}...")
         saved_files = {}
 
@@ -127,13 +89,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _plot_overview_dashboard(self, result: ParcelLocalizationResult) -> Path:
-        """
-        Large composite figure:
-          Row 1: Reference patches
-          Row 2: Query patches
-          Row 3: SimSAC heatmap overlays
-          Row 4: Metric scores (bar per surface)
-        """
         surfaces = result.surfaces
         n_surfaces = len(surfaces)
         if n_surfaces == 0:
@@ -219,10 +174,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _plot_heatmap_grid(self, result: ParcelLocalizationResult) -> Path:
-        """
-        Detailed heatmap visualization for each surface:
-        Columns: Reference | Query | SimSAC Heatmap | Heatmap Overlay | Diff Map
-        """
         surfaces = list(result.surfaces.values())
         n_surfaces = len(surfaces)
         if n_surfaces == 0:
@@ -298,10 +249,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _plot_metrics_comparison(self, result: ParcelLocalizationResult) -> Path:
-        """
-        Grouped bar chart showing all metrics for all surfaces.
-        Makes it easy to see which metric detected the tampering.
-        """
         surfaces = result.surfaces
         if not surfaces:
             return None
@@ -380,10 +327,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _plot_tampered_masks(self, result: ParcelLocalizationResult) -> Path:
-        """
-        Shows binary tampered region masks overlaid on query patches.
-        Red regions = detected as tampered.
-        """
         surfaces = list(result.surfaces.values())
         n_surfaces = len(surfaces)
         if n_surfaces == 0:
@@ -442,13 +385,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _plot_verdict_summary(self, result: ParcelLocalizationResult) -> Path:
-        """
-        Clean summary card showing:
-        - Overall verdict (TAMPERED / CLEAN)
-        - Per-surface verdict table
-        - Tampering score per surface
-        - Tampered area percentage per surface
-        """
         surfaces = result.surfaces
         n_surfaces = len(surfaces)
 
@@ -563,7 +499,6 @@ class ExplainabilityDashboard:
     # ─────────────────────────────────────────────────────
 
     def _style_ax(self, ax, border_color: str, show_border: bool = True):
-        """Remove ticks and optionally add colored border."""
         ax.set_xticks([])
         ax.set_yticks([])
         if show_border:
@@ -576,7 +511,6 @@ class ExplainabilityDashboard:
         ax.set_facecolor('#1a1a2e')
 
     def _draw_metric_bars(self, ax, surface: SurfaceLocalizationResult):
-        """Draw small horizontal metric bars for a surface."""
         metrics = surface.metrics
         metric_names = list(METRIC_META.keys())
         values = [float(metrics.get(m, 0)) for m in metric_names]
@@ -644,7 +578,6 @@ def main():
 
     print("\n" + "=" * 60)
     print("DASHBOARD COMPLETE")
-    print("=" * 60)
     for name, path in saved_files.items():
         print(f"  {name:<12}: {path}")
 

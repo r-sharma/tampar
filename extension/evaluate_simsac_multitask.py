@@ -1,22 +1,3 @@
-"""
-Evaluate Multi-Task SimSaC Model
-
-Evaluates both:
-1. Contrastive learning performance (cosine similarity, distance metrics)
-2. Tampering classification performance (accuracy, precision, recall, F1)
-
-Computes metrics on:
-- Clean vs Clean pairs (should have high similarity)
-- Clean vs Tampered pairs (should have low similarity + correct classification)
-- Tampered vs Tampered pairs (different types should have low similarity)
-
-Usage:
-    python extension/evaluate_simsac_multitask.py \
-        --checkpoint /content/outputs/multitask_training/best_model.pth \
-        --test_pairs /content/tampar/data/tampering_pairs/gt/tampering_triplets.csv \
-        --output_dir /content/outputs/multitask_evaluation \
-        --batch_size 32
-"""
 
 import os
 import sys
@@ -49,15 +30,8 @@ from extension.simsac_multitask_model import create_multitask_model
 
 
 class EvaluationDataset(Dataset):
-    """Dataset for evaluation pairs."""
 
     def __init__(self, pairs_csv, transform=None, img_size=512):
-        """
-        Args:
-            pairs_csv: Path to pairs CSV file
-            transform: Optional transform
-            img_size: Image size
-        """
         self.df = pd.read_csv(pairs_csv)
         self.img_size = img_size
 
@@ -111,7 +85,6 @@ class EvaluationDataset(Dataset):
 
 
 class MultiTaskEvaluator:
-    """Evaluator for multi-task model."""
 
     def __init__(self, model, device='cuda'):
         self.model = model
@@ -120,12 +93,6 @@ class MultiTaskEvaluator:
 
     @torch.no_grad()
     def evaluate(self, dataloader):
-        """
-        Evaluate model on test data.
-
-        Returns:
-            results: Dict with evaluation metrics
-        """
         all_embeddings1 = []
         all_embeddings2 = []
         all_logits1 = []
@@ -250,14 +217,10 @@ class MultiTaskEvaluator:
         return results
 
     def print_results(self, results):
-        """Print evaluation results in a formatted way."""
-        print(f"\n{'='*70}")
         print("Evaluation Results")
-        print(f"{'='*70}")
 
         # Classification metrics
         print("\n1. Classification Metrics (Overall)")
-        print(f"{'='*70}")
         cls_metrics = results['classification']
         print(f"  Accuracy:  {cls_metrics['accuracy']:.4f}")
         print(f"  Precision: {cls_metrics['precision']:.4f}")
@@ -266,9 +229,7 @@ class MultiTaskEvaluator:
 
         # Per-class metrics
         print("\n2. Classification Metrics (Per Class)")
-        print(f"{'='*70}")
         print(f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1':<12} {'Support':<10}")
-        print(f"{'-'*70}")
         for class_name, metrics in results['classification_per_class'].items():
             print(f"{class_name:<15} "
                   f"{metrics['precision']:<12.4f} "
@@ -278,9 +239,7 @@ class MultiTaskEvaluator:
 
         # Pair type analysis
         print("\n3. Pair Type Analysis")
-        print(f"{'='*70}")
         print(f"{'Pair Type':<25} {'Count':<10} {'Avg Confidence':<18} {'Accuracy':<12}")
-        print(f"{'-'*70}")
         for pair_type, metrics in results['pair_type_analysis'].items():
             print(f"{pair_type:<25} "
                   f"{metrics['count']:<10} "
@@ -289,7 +248,6 @@ class MultiTaskEvaluator:
 
         # Confusion matrix
         print("\n4. Confusion Matrix")
-        print(f"{'='*70}")
         cm = np.array(results['confusion_matrix'])
         class_names = ['Clean', 'Tape', 'Writing', 'Fold', 'Other']
 
@@ -298,7 +256,6 @@ class MultiTaskEvaluator:
         for name in class_names[:cm.shape[1]]:
             print(f"{name:<12}", end='')
         print()
-        print(f"{'-'*70}")
 
         # Print rows
         for i, name in enumerate(class_names[:cm.shape[0]]):
@@ -307,7 +264,6 @@ class MultiTaskEvaluator:
                 print(f"{cm[i,j]:<12}", end='')
             print()
 
-        print(f"\n{'='*70}")
 
 
 def main():
@@ -404,9 +360,7 @@ def main():
     print("\nGenerating detailed classification report...")
     # We'd need to re-run to get all predictions, for now just save what we have
 
-    print(f"\n{'='*70}")
     print("Evaluation Complete!")
-    print(f"{'='*70}")
 
 
 if __name__ == "__main__":

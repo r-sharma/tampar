@@ -1,26 +1,3 @@
-"""
-Multi-Task Training for Tampering-Aware SimSaC
-
-Combines:
-1. Triplet/Quadruplet Loss - Contrastive learning with hard negatives
-2. Classification Loss - Tampering type prediction
-3. Hard Negative Mining - Focus on confusing examples
-
-Loss = α * Triplet_Loss + β * Classification_Loss + γ * Quadruplet_Loss
-
-Usage:
-    python extension/train_simsac_multitask.py \
-        --triplet_pairs /content/tampar/data/tampering_pairs/gt/tampering_triplets.csv \
-        --quadruplet_pairs /content/tampar/data/tampering_pairs/gt/tampering_quadruplets.csv \
-        --output_dir /content/outputs/multitask_training \
-        --simsac_checkpoint /content/tampar/src/simsac/weight/synthetic.pth \
-        --freeze_simsac \
-        --batch_size 16 \
-        --epochs 50 \
-        --triplet_weight 1.0 \
-        --classification_weight 0.5 \
-        --quadruplet_weight 0.3
-"""
 
 import os
 import sys
@@ -50,15 +27,8 @@ from extension.simsac_multitask_model import create_multitask_model
 
 
 class TripletDataset(Dataset):
-    """Dataset for triplet pairs (anchor, positive, negative)."""
 
     def __init__(self, triplet_csv, transform=None, img_size=512):
-        """
-        Args:
-            triplet_csv: Path to triplet CSV file
-            transform: Optional transform
-            img_size: Image size for full resolution
-        """
         self.df = pd.read_csv(triplet_csv)
         self.transform = transform
         self.img_size = img_size
@@ -116,15 +86,8 @@ class TripletDataset(Dataset):
 
 
 class QuadrupletDataset(Dataset):
-    """Dataset for quadruplet pairs (anchor, positive, negative1, negative2)."""
 
     def __init__(self, quadruplet_csv, transform=None, img_size=512):
-        """
-        Args:
-            quadruplet_csv: Path to quadruplet CSV file
-            transform: Optional transform
-            img_size: Image size for full resolution
-        """
         self.df = pd.read_csv(quadruplet_csv)
         self.transform = transform
         self.img_size = img_size
@@ -190,28 +153,13 @@ class QuadrupletDataset(Dataset):
 
 
 class TripletLoss(nn.Module):
-    """Triplet loss with hard negative mining."""
 
     def __init__(self, margin=0.5, mining='hard'):
-        """
-        Args:
-            margin: Margin for triplet loss
-            mining: 'hard' for hard negative mining, 'all' for all triplets
-        """
         super().__init__()
         self.margin = margin
         self.mining = mining
 
     def forward(self, anchor_emb, positive_emb, negative_emb):
-        """
-        Args:
-            anchor_emb: [B, D] anchor embeddings
-            positive_emb: [B, D] positive embeddings
-            negative_emb: [B, D] negative embeddings
-
-        Returns:
-            loss: Triplet loss
-        """
         # Compute distances
         pos_dist = F.pairwise_distance(anchor_emb, positive_emb, p=2)
         neg_dist = F.pairwise_distance(anchor_emb, negative_emb, p=2)
@@ -232,29 +180,13 @@ class TripletLoss(nn.Module):
 
 
 class QuadrupletLoss(nn.Module):
-    """Quadruplet loss for learning fine-grained tampering differences."""
 
     def __init__(self, margin1=0.5, margin2=0.3):
-        """
-        Args:
-            margin1: Margin between positive and negative1
-            margin2: Additional margin between negative1 and negative2
-        """
         super().__init__()
         self.margin1 = margin1
         self.margin2 = margin2
 
     def forward(self, anchor_emb, positive_emb, negative1_emb, negative2_emb):
-        """
-        Args:
-            anchor_emb: [B, D] anchor embeddings
-            positive_emb: [B, D] positive embeddings
-            negative1_emb: [B, D] negative1 embeddings
-            negative2_emb: [B, D] negative2 embeddings
-
-        Returns:
-            loss: Quadruplet loss
-        """
         # Compute distances
         pos_dist = F.pairwise_distance(anchor_emb, positive_emb, p=2)
         neg1_dist = F.pairwise_distance(anchor_emb, negative1_emb, p=2)
@@ -268,7 +200,6 @@ class QuadrupletLoss(nn.Module):
 
 
 class MultiTaskTrainer:
-    """Trainer for multi-task tampering detection."""
 
     def __init__(
         self,
@@ -331,7 +262,6 @@ class MultiTaskTrainer:
         self.best_epoch = 0
 
     def train_epoch_triplets(self, epoch):
-        """Train one epoch on triplet data."""
         self.model.train()
 
         total_loss = 0
@@ -375,9 +305,9 @@ class MultiTaskTrainer:
             # Compute triplet loss
             # We approximate by using the pairwise embeddings
             triplet_loss = self.triplet_loss_fn(
-                anchor_pos_emb,  # Anchor embeddings
-                anchor_pos_emb,  # Positive embeddings (same as anchor in this pair)
-                anchor_neg_emb   # Negative embeddings
+                anchor_pos_emb,
+                anchor_pos_emb,
+                anchor_neg_emb
             )
 
             # Classification loss (on negative samples - tampered)
@@ -421,7 +351,6 @@ class MultiTaskTrainer:
         return avg_loss, avg_triplet_loss, avg_classification_loss, 0, accuracy
 
     def train_epoch_quadruplets(self, epoch):
-        """Train one epoch on quadruplet data."""
         if self.quadruplet_loader is None:
             return 0, 0, 0, 0, 0
 
@@ -457,7 +386,7 @@ class MultiTaskTrainer:
             # Compute quadruplet loss
             quadruplet_loss = self.quadruplet_loss_fn(
                 anchor_pos_emb,
-                anchor_pos_emb,  # Positive (approximation)
+                anchor_pos_emb,
                 anchor_neg1_emb,
                 anchor_neg2_emb
             )
@@ -507,16 +436,12 @@ class MultiTaskTrainer:
         return avg_loss, 0, avg_classification_loss, avg_quadruplet_loss, accuracy
 
     def train(self, num_epochs):
-        """Train for multiple epochs."""
-        print(f"\n{'='*70}")
         print("Starting Multi-Task Training")
-        print(f"{'='*70}")
         print(f"Output directory: {self.output_dir}")
         print(f"Device: {self.device}")
         print(f"Triplet weight: {self.triplet_weight}")
         print(f"Classification weight: {self.classification_weight}")
         print(f"Quadruplet weight: {self.quadruplet_weight}")
-        print(f"{'='*70}\n")
 
         for epoch in range(num_epochs):
             # Train on triplets
@@ -560,13 +485,10 @@ class MultiTaskTrainer:
             # Save training history
             self.save_history()
 
-        print(f"\n{'='*70}")
         print("Training Complete!")
-        print(f"{'='*70}")
         print(f"Best loss: {self.best_loss:.4f} at epoch {self.best_epoch+1}")
 
     def save_checkpoint(self, epoch, is_best=False):
-        """Save model checkpoint (TAMPAR-compatible format)."""
         # Extract only the base SimSaC model weights
         full_state_dict = self.model.state_dict()
         simsac_state_dict = {}
@@ -574,14 +496,14 @@ class MultiTaskTrainer:
         for key, value in full_state_dict.items():
             if key.startswith('simsac.'):
                 # Remove "simsac." prefix to match TAMPAR's format
-                new_key = key[7:]  # Remove "simsac." (7 characters)
+                new_key = key[7:]
                 simsac_state_dict[new_key] = value
             # Skip projection_head, classification_head, tampering_encoder, feature_projector
 
         checkpoint = {
             'epoch': epoch + 1,
-            'state_dict': simsac_state_dict,  # TAMPAR-compatible format
-            'full_model_state_dict': full_state_dict,  # For resuming multi-task training
+            'state_dict': simsac_state_dict,
+            'full_model_state_dict': full_state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_loss': self.best_loss,
@@ -599,7 +521,6 @@ class MultiTaskTrainer:
             print(f"  ✓ Saved best model (loss: {self.best_loss:.4f})")
 
     def save_history(self):
-        """Save training history to JSON."""
         history_path = self.output_dir / 'training_history.json'
         with open(history_path, 'w') as f:
             json.dump(self.history, f, indent=2)

@@ -1,17 +1,3 @@
-"""
-Investigate Outlier Pairs from SimSaC Evaluation
-
-This script helps identify which specific parcels, surfaces, and captures
-produced outlier similarity scores (e.g., negative pairs with high similarity
-or positive pairs with low similarity).
-
-Usage:
-    python investigate_outliers.py \
-        --checkpoint /content/outputs/training/best_model.pth \
-        --val_pairs /content/tampar/data/tampar_sample/contrastive_pairs_surface/val_pairs_surface_level.pkl \
-        --top_n 10 \
-        --output_dir /content/outputs/outlier_analysis
-"""
 
 import os
 import argparse
@@ -30,10 +16,7 @@ from simsac_contrastive_model import SimSaCContrastive
 
 
 def load_model(checkpoint_path, device='cuda'):
-    """Load trained model from checkpoint."""
-    print(f"\n{'='*70}")
     print("Loading Trained Model")
-    print(f"{'='*70}")
     print(f"Checkpoint: {checkpoint_path}")
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -92,23 +75,7 @@ def load_model(checkpoint_path, device='cuda'):
 
 
 def extract_detailed_results(model, pairs_path, device='cuda', batch_size=16):
-    """
-    Extract similarity scores with detailed pair metadata.
-
-    Returns:
-        DataFrame with columns:
-        - idx: pair index
-        - similarity: cosine similarity score
-        - label: 1=positive, 0=negative
-        - parcel_id: parcel ID
-        - surface_name: surface name (e.g., 'center', 'top')
-        - pair_type: type of pair (e.g., 'reference_vs_pred')
-        - ref_file: reference UV map filename
-        - field_file: field UV map filename
-    """
-    print(f"\n{'='*70}")
     print("Extracting Detailed Results")
-    print(f"{'='*70}")
 
     # Load pairs
     with open(pairs_path, 'rb') as f:
@@ -177,16 +144,7 @@ def extract_detailed_results(model, pairs_path, device='cuda', batch_size=16):
 
 
 def find_outliers(df, top_n=10):
-    """
-    Find outlier pairs.
-
-    Outliers are defined as:
-    - Negative pairs with HIGH similarity (false positives)
-    - Positive pairs with LOW similarity (false negatives)
-    """
-    print(f"\n{'='*70}")
     print("Finding Outliers")
-    print(f"{'='*70}")
 
     # Split by label
     positive_df = df[df['label'] == 1].copy()
@@ -198,25 +156,16 @@ def find_outliers(df, top_n=10):
     # Find problematic positive pairs (low similarity)
     positive_outliers = positive_df.nsmallest(top_n, 'similarity')
 
-    print(f"\n{'='*70}")
     print(f"Top {top_n} Negative Pairs with HIGHEST Similarity (should be low)")
-    print(f"{'='*70}")
     print(negative_outliers[['idx', 'similarity', 'parcel_id', 'surface_name', 'pair_type', 'field_file']].to_string(index=False))
 
-    print(f"\n{'='*70}")
     print(f"Top {top_n} Positive Pairs with LOWEST Similarity (should be high)")
-    print(f"{'='*70}")
     print(positive_outliers[['idx', 'similarity', 'parcel_id', 'surface_name', 'pair_type', 'field_file']].to_string(index=False))
 
     return negative_outliers, positive_outliers
 
 
 def visualize_outlier_pair(pairs, idx, output_dir):
-    """
-    Visualize a specific pair by index.
-
-    Shows both surfaces side by side with metadata.
-    """
     pair = pairs[idx]
 
     # Get images
@@ -257,7 +206,6 @@ def visualize_outlier_pair(pairs, idx, output_dir):
 
 
 def save_detailed_results(df, output_dir):
-    """Save detailed results to CSV."""
     csv_path = output_dir / 'detailed_pair_results.csv'
     df.to_csv(csv_path, index=False)
     print(f"\n✓ Saved detailed results: {csv_path}")
@@ -289,9 +237,7 @@ def main():
 
     device = args.device if torch.cuda.is_available() else 'cpu'
 
-    print(f"\n{'='*70}")
     print("SimSaC Outlier Investigation")
-    print(f"{'='*70}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Val pairs: {args.val_pairs}")
     print(f"Device: {device}")
@@ -320,9 +266,7 @@ def main():
     print(f"\n✓ Saved outlier CSVs to {output_dir}")
 
     # Visualize top outliers
-    print(f"\n{'='*70}")
     print(f"Visualizing Top {args.visualize_top} Outliers")
-    print(f"{'='*70}")
 
     print("\nNegative pair outliers (high similarity):")
     for i, row in negative_outliers.head(args.visualize_top).iterrows():
@@ -337,9 +281,7 @@ def main():
         visualize_outlier_pair(pairs, idx, output_dir)
 
     # Summary statistics
-    print(f"\n{'='*70}")
     print("Summary Statistics")
-    print(f"{'='*70}")
 
     pos_df = df[df['label'] == 1]
     neg_df = df[df['label'] == 0]
@@ -356,9 +298,7 @@ def main():
     print(f"  Min similarity: {neg_df['similarity'].min():.4f}")
     print(f"  Max similarity: {neg_df['similarity'].max():.4f}")
 
-    print(f"\n{'='*70}")
     print("✓ Outlier Investigation Complete!")
-    print(f"{'='*70}")
     print(f"\nAll results saved to: {output_dir}")
     print(f"\nGenerated files:")
     print(f"  - detailed_pair_results.csv (all pairs with metadata)")

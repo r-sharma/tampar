@@ -1,36 +1,3 @@
-"""
-Task 5.7: Evaluate Fine-tuned SimSaC on Validation Set
-
-Comprehensive evaluation including:
-- Pair classification metrics (accuracy, precision, recall, F1)
-- Feature similarity analysis
-- t-SNE visualization of embeddings
-- Confusion matrix
-- Comparison of positive vs negative pair similarities
-
-Supports both full UV map pairs and surface-level pairs.
-
-Usage:
-    # Contrastive checkpoint — auto-detect surface-level pairs
-    python evaluate_simsac.py \
-        --checkpoint /content/outputs/training/best_model.pth \
-        --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface \
-        --output_dir /content/outputs/evaluation
-
-    # Contrastive checkpoint — explicitly specify pair file
-    python evaluate_simsac.py \
-        --checkpoint /content/outputs/training/best_model.pth \
-        --val_pairs /path/to/val_pairs_surface_level.pkl \
-        --output_dir /content/outputs/evaluation
-
-    # Direct-CM checkpoint — no contrastive pairs needed, just the simscores CSV
-    python evaluate_simsac.py \
-        --checkpoint /content/outputs/direct_cm/best.pth \
-        --simscores_csv /content/outputs/simscores_adversarial_simsac_test_wb_ep_10.csv \
-        --output_dir /content/outputs/evaluation
-    # (--mode is auto-detected from the checkpoint; --data_dir / --val_pairs are NOT needed)
-"""
-
 import os
 import argparse
 from pathlib import Path
@@ -53,19 +20,12 @@ from simsac_contrastive_model import SimSaCContrastive
 
 
 def load_model(checkpoint_path, device='cuda'):
-    """Load trained model from checkpoint."""
-    print(f"\n{'='*70}")
     print("Loading Trained Model")
-    print(f"{'='*70}")
     print(f"Checkpoint: {checkpoint_path}")
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    
-    # Create model architecture (same as training)
-    # We need to load the full SimSaC first
     weights_path = '/content/tampar/src/simsac/weight/synth_then_joint_synth_changesim.pth'
     
-    # Import and create base model
     import sys
     sys.path.insert(0, "/content/tampar")
     from src.simsac.models.our_models.SimSaC import SimSaC_Model
@@ -93,31 +53,24 @@ def load_model(checkpoint_path, device='cuda'):
     model = SimSaCContrastive(
         simsac_model=simsac,
         projection_dim=128,
-        freeze_backbone=False  # Load with all params
+        freeze_backbone=False  
     )
 
-    # Load trained weights (TAMPAR-compatible format)
-    # The checkpoint contains only base SimSaC weights (no "simsac." prefix)
-    # We need to add the prefix back to load into our wrapped model
     simsac_state_dict = checkpoint['state_dict']
 
-    # Add "simsac." prefix to all keys
+    # add "simsac." prefix
     wrapped_state_dict = {}
     for key, value in simsac_state_dict.items():
         wrapped_state_dict[f'simsac.{key}'] = value
 
-    # Load into the wrapped model (strict=False allows missing projection_head keys)
     model.load_state_dict(wrapped_state_dict, strict=False)
 
     model = model.to(device)
     model.eval()
 
-    print(f"✓ Model loaded from epoch {checkpoint['epoch']}")
+    print(f" Model loaded from epoch {checkpoint['epoch']}")
 
-    # Print training history if available.
-    # Handles two checkpoint formats:
-    #   contrastive trainers  (train_simsac_*.py)         → 'train_loss',    'val_loss'
-    #   direct CM trainer     (train_simsac_direct_cm.py) → 'train_cm_loss', 'val_combined'
+    # print training history if available.
     if 'history' in checkpoint:
         h = checkpoint['history']
         train_key = 'train_loss'    if 'train_loss'   in h else \
@@ -139,18 +92,7 @@ def load_model(checkpoint_path, device='cuda'):
 
 
 def extract_embeddings(model, dataloader, device='cuda'):
-    """
-    Extract embeddings and labels from dataset.
-    
-    Returns:
-        embeddings1: First image embeddings [N, 128]
-        embeddings2: Second image embeddings [N, 128]
-        labels: Pair labels [N]
-        similarities: Cosine similarities [N]
-    """
-    print(f"\n{'='*70}")
-    print("Extracting Embeddings")
-    print(f"{'='*70}")
+    print("\nExtracting Embeddings")
     
     embeddings1_list = []
     embeddings2_list = []
@@ -160,7 +102,6 @@ def extract_embeddings(model, dataloader, device='cuda'):
     model.eval()
     with torch.no_grad():
         for batch_data in tqdm(dataloader, desc="Extracting"):
-            # Handle both 3-item and 4-item unpacking (with/without is_adversarial)
             if len(batch_data) == 4:
                 img1, img2, labels, is_adversarial = batch_data
             else:
@@ -169,25 +110,24 @@ def extract_embeddings(model, dataloader, device='cuda'):
             img1 = img1.to(device)
             img2 = img2.to(device)
             
-            # Get embeddings
+            # get embeddings
             z1, z2 = model(img1, img2)
             
-            # Compute similarity
+            # compute similarity
             similarity = F.cosine_similarity(z1, z2, dim=1)
-            
-            # Store
+
             embeddings1_list.append(z1.cpu().numpy())
             embeddings2_list.append(z2.cpu().numpy())
             labels_list.append(labels.numpy())
             similarities_list.append(similarity.cpu().numpy())
     
-    # Concatenate
+    # concatenate
     embeddings1 = np.concatenate(embeddings1_list, axis=0)
     embeddings2 = np.concatenate(embeddings2_list, axis=0)
     labels = np.concatenate(labels_list, axis=0)
     similarities = np.concatenate(similarities_list, axis=0)
     
-    print(f"✓ Extracted {len(labels)} pairs")
+    print(f" Extracted {len(labels)} pairs")
     print(f"  Positive pairs: {(labels == 1).sum()}")
     print(f"  Negative pairs: {(labels == 0).sum()}")
     
@@ -195,14 +135,7 @@ def extract_embeddings(model, dataloader, device='cuda'):
 
 
 def compute_metrics(similarities, labels, threshold=0.5):
-    """
-    Compute classification metrics.
-    
-    Predicts positive if similarity > threshold.
-    """
-    print(f"\n{'='*70}")
-    print("Computing Classification Metrics")
-    print(f"{'='*70}")
+    print("\nComputing Classification Metrics")
     print(f"Classification threshold: {threshold}")
     
     # Predict labels based on threshold
@@ -214,15 +147,13 @@ def compute_metrics(similarities, labels, threshold=0.5):
     recall = recall_score(labels, predictions, zero_division=0)
     f1 = f1_score(labels, predictions, zero_division=0)
     
-    print(f"\n{'='*70}")
-    print("Results")
-    print(f"{'='*70}")
+    print("\nResults")
     print(f"Accuracy:  {accuracy:.4f} ({accuracy*100:.2f}%)")
     print(f"Precision: {precision:.4f}")
     print(f"Recall:    {recall:.4f}")
     print(f"F1 Score:  {f1:.4f}")
     
-    # Classification report
+    # classification report
     print(f"\nClassification Report:")
     print(classification_report(labels, predictions, 
                                 target_names=['Negative', 'Positive'],
@@ -241,10 +172,7 @@ def compute_metrics(similarities, labels, threshold=0.5):
 
 
 def analyze_similarities(similarities, labels, output_dir):
-    """Analyze similarity distributions."""
-    print(f"\n{'='*70}")
-    print("Analyzing Similarity Distributions")
-    print(f"{'='*70}")
+    print("\nAnalyzing Similarity Distributions")
     
     pos_similarities = similarities[labels == 1]
     neg_similarities = similarities[labels == 0]
@@ -261,11 +189,11 @@ def analyze_similarities(similarities, labels, output_dir):
     print(f"  Min:  {neg_similarities.min():.4f}")
     print(f"  Max:  {neg_similarities.max():.4f}")
     
-    # Separation
+    # separation
     separation = pos_similarities.mean() - neg_similarities.mean()
     print(f"\nSeparation (higher is better): {separation:.4f}")
     
-    # Plot distributions
+    # plot distributions
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     
     # Histogram
@@ -289,7 +217,7 @@ def analyze_similarities(similarities, labels, output_dir):
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"\n✓ Saved: {plot_path}")
+    print(f"\n Saved: {plot_path}")
     
     return {
         'pos_mean': pos_similarities.mean(),
@@ -301,17 +229,6 @@ def analyze_similarities(similarities, labels, output_dir):
 
 
 def detect_checkpoint_mode(checkpoint: dict) -> str:
-    """
-    Infer the checkpoint type from its history keys.
-
-    Returns
-    -------
-    'direct_cm'   – saved by train_simsac_direct_cm.py
-                    (history has 'train_cm_loss', no projection head weights)
-    'contrastive' – saved by train_simsac_contrastive / online_adv / laplacian_distill
-                    (history has 'train_loss', projection head trained)
-    'unknown'     – no history present; assume contrastive (original pretrained)
-    """
     h = checkpoint.get('history', {})
     if 'train_cm_loss' in h:
         return 'direct_cm'
@@ -321,29 +238,10 @@ def detect_checkpoint_mode(checkpoint: dict) -> str:
 
 
 def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
-    """
-    For direct-CM checkpoints: visualise SimSAC change-map feature distributions
-    (msssim, cwssim, ssim, hog, mae) split by tampered vs clean.
-
-    This is the correct quality metric for a change-map model because:
-      - The direct-CM training improves the change-map output, not the
-        projection-head embeddings (which are randomly initialised).
-      - The XGBoost classifier that achieves 89%+ accuracy operates on
-        exactly these features.
-
-    Parameters
-    ----------
-    simscores_csv : path to the simscores CSV produced by
-                    compute_similarity_scores.py (filtered to compare_type=simsac)
-    output_dir    : where to write feature_distributions.png
-    """
     import pandas as pd
     from sklearn.metrics import roc_auc_score
 
-    print(f"\n{'='*70}")
-    print("Direct-CM Feature Distribution Analysis")
-    print(f"  (cosine similarity is NOT meaningful for this checkpoint type)")
-    print(f"{'='*70}")
+    print("\ndirect-cm feature distribution analysis")
 
     df = pd.read_csv(simscores_csv)
     if 'compare_type' in df.columns:
@@ -355,9 +253,9 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
     )
 
     METRICS = [
-        ('msssim', 'MS-SSIM',  True,  '#2196F3'),   # high = clean
+        ('msssim', 'MS-SSIM',  True,  '#2196F3'),
         ('ssim',   'SSIM',     True,  '#4CAF50'),
-        ('hog',    'HOG',      False, '#FF9800'),    # high = tampered
+        ('hog',    'HOG',      False, '#FF9800'),
         ('mae',    'MAE',      False, '#F44336'),
     ]
 
@@ -380,7 +278,7 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
         c_vals = clean[key].dropna().values
         t_vals = tampered[key].dropna().values
 
-        # ── Row 0: Histogram ───────────────────────────────────────────────
+        # row #0
         ax_hist = axes[0, col_idx]
         ax_hist.hist(c_vals, bins=40, alpha=0.65, color='#27AE60',
                      label='Clean', density=True)
@@ -392,7 +290,7 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
         ax_hist.legend(fontsize=8)
         ax_hist.grid(True, alpha=0.3)
 
-        # ── Row 1: Box plot ────────────────────────────────────────────────
+        # row #1
         ax_box = axes[1, col_idx]
         bp = ax_box.boxplot(
             [c_vals, t_vals],
@@ -405,12 +303,9 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
         ax_box.set_ylabel(label)
         ax_box.grid(True, alpha=0.3)
 
-        # ── AUROC annotation ───────────────────────────────────────────────
         all_vals = np.concatenate([c_vals, t_vals])
         all_lbl  = np.concatenate([np.zeros(len(c_vals)), np.ones(len(t_vals))])
         try:
-            # For metrics where HIGH = tampered (hog, mae), score = value directly.
-            # For metrics where LOW = tampered (msssim, ssim), invert the score.
             score = all_vals if not low_is_tampered else -all_vals
             auc = roc_auc_score(all_lbl, score)
         except Exception:
@@ -431,11 +326,10 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
     plot_path = output_dir / 'feature_distributions.png'
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"\n✓ Saved: {plot_path}")
+    print(f"\n Saved: {plot_path}")
 
-    # ── Summary table ──────────────────────────────────────────────────────
+    #summary
     print(f"\n  {'Metric':<10} {'Separation':>12} {'AUROC':>8}")
-    print(f"  {'-'*32}")
     for lbl, sep, auc in sep_scores:
         print(f"  {lbl:<10} {sep:>12.4f} {auc:>8.4f}")
 
@@ -443,8 +337,7 @@ def plot_feature_distributions_from_csv(simscores_csv: str, output_dir: Path):
 
 
 def plot_confusion_matrix(labels, predictions, output_dir):
-    """Plot confusion matrix."""
-    print(f"\nPlotting Confusion Matrix...")
+    print(f"\nPlotting confusion matrix...")
     
     cm = confusion_matrix(labels, predictions)
     
@@ -460,32 +353,26 @@ def plot_confusion_matrix(labels, predictions, output_dir):
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved: {plot_path}")
+    print(f" Saved: {plot_path}")
 
 
 def visualize_tsne(embeddings1, embeddings2, labels, output_dir):
-    """Create t-SNE visualization of embeddings."""
-    print(f"\n{'='*70}")
     print("Creating t-SNE Visualization")
-    print(f"{'='*70}")
     
-    # Combine all embeddings
     all_embeddings = np.concatenate([embeddings1, embeddings2], axis=0)
     
-    # Create labels for visualization
-    # 0: negative pair img1, 1: negative pair img2, 2: positive pair img1, 3: positive pair img2
     viz_labels = np.zeros(len(all_embeddings))
     n_pairs = len(labels)
     
     for i in range(n_pairs):
-        if labels[i] == 0:  # Negative pair
-            viz_labels[i] = 0  # img1
-            viz_labels[i + n_pairs] = 1  # img2
-        else:  # Positive pair
-            viz_labels[i] = 2  # img1
-            viz_labels[i + n_pairs] = 3  # img2
+        if labels[i] == 0:
+            viz_labels[i] = 0 
+            viz_labels[i + n_pairs] = 1  
+        else: 
+            viz_labels[i] = 2 
+            viz_labels[i + n_pairs] = 3 
     
-    print(f"Computing t-SNE for {len(all_embeddings)} embeddings...")
+    print(f"Computing t-SNE for {len(all_embeddings)} embeddings")
     tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(all_embeddings)-1))
     embeddings_2d = tsne.fit_transform(all_embeddings)
     
@@ -527,11 +414,10 @@ def visualize_tsne(embeddings1, embeddings2, labels, output_dir):
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"✓ Saved: {plot_path}")
+    print(f" Saved: {plot_path}")
 
 
 def save_results(metrics, similarity_stats, output_dir):
-    """Save all results to JSON."""
     import json
     
     results = {
@@ -555,7 +441,7 @@ def save_results(metrics, similarity_stats, output_dir):
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"\n✓ Results saved: {results_path}")
+    print(f"\n Results saved: {results_path}")
 
 
 def main():
@@ -599,29 +485,22 @@ def main():
 
     device = args.device if torch.cuda.is_available() else 'cpu'
 
-    print(f"\n{'='*70}")
     print("SimSaC Contrastive Learning - Evaluation (Task 5.7)")
-    print(f"{'='*70}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Threshold: {args.threshold}")
     print(f"Device: {device}")
 
-    # ── Resolve evaluation mode BEFORE any model loading ─────────────────────
-    # For 'auto': peek at the checkpoint dict only (no VGG16 download, no model
-    # build) so we can decide whether we even need to load the full model.
     mode = args.mode
     if mode == 'auto':
         print(f"\nAuto-detecting checkpoint mode (lightweight peek)...")
         ckpt_peek = torch.load(args.checkpoint, map_location='cpu')
         mode = detect_checkpoint_mode(ckpt_peek)
         if mode == 'unknown':
-            mode = 'contrastive'   # default for original pretrained checkpoint
-        del ckpt_peek              # free memory before potentially loading full model
+            mode = 'contrastive'   
+        del ckpt_peek             
         print(f"  Detected mode: {mode}")
 
-    # ── Direct-CM path: skip model loading entirely ───────────────────────────
     if mode == 'direct_cm':
-        print(f"\n{'='*70}")
         print("NOTE: Direct-CM checkpoint detected")
         print("  The projection head was NOT trained by train_simsac_direct_cm.py.")
         print("  Cosine similarity of projection-head embeddings is MEANINGLESS")
@@ -632,7 +511,6 @@ def main():
         print("  Using feature-distribution visualisation instead.")
         print("  This shows the SimSAC change-map quality that drives the")
         print("  XGBoost 89%+ accuracy.")
-        print(f"{'='*70}")
 
         if args.simscores_csv is None:
             print("\nERROR: --simscores_csv is required for mode=direct_cm.")
@@ -641,13 +519,10 @@ def main():
             raise SystemExit(1)
 
         plot_feature_distributions_from_csv(args.simscores_csv, output_dir)
-        print(f"\n{'='*70}")
-        print("✓ Direct-CM Evaluation Complete!")
+        print(" Direct-CM Evaluation Complete!")
         print(f"  Generated: {output_dir}/feature_distributions.png")
-        print(f"{'='*70}")
-        return   # skip the contrastive (cosine similarity) pipeline below
+        return  
 
-    # ── Contrastive path: full model load (VGG16 backbone + projection head) ──
     model, checkpoint = load_model(args.checkpoint, device)
 
     # Auto-detect validation pairs if not specified
@@ -656,7 +531,6 @@ def main():
             raise ValueError("Must specify either --data_dir or --val_pairs")
 
         data_dir = Path(args.data_dir)
-        # Try surface-level pairs first, then fall back to regular pairs
         candidates = [
             data_dir / 'val_pairs_surface_level.pkl',
             data_dir / 'val_pairs.pkl'
@@ -682,30 +556,26 @@ def main():
         shuffle=False,
         num_workers=2
     )
+
+    """
+    and testing this
+    """
     
-    # Extract embeddings
+    # extract embeddings
     embeddings1, embeddings2, labels, similarities = extract_embeddings(
         model, val_loader, device
     )
     
-    # Compute metrics
     metrics = compute_metrics(similarities, labels, threshold=args.threshold)
-    
-    # Analyze similarities
     similarity_stats = analyze_similarities(similarities, labels, output_dir)
-    
-    # Plot confusion matrix
     plot_confusion_matrix(labels, metrics['predictions'], output_dir)
     
     # t-SNE visualization
     visualize_tsne(embeddings1, embeddings2, labels, output_dir)
     
-    # Save results
     save_results(metrics, similarity_stats, output_dir)
     
-    print(f"\n{'='*70}")
-    print("✓ Evaluation Complete!")
-    print(f"{'='*70}")
+    print(" Evaluation Complete!")
     print(f"\nAll results saved to: {output_dir}")
     print(f"\nGenerated files:")
     print(f"  - evaluation_results.json")

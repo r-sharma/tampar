@@ -1,35 +1,4 @@
 #!/usr/bin/env python3
-"""
-SimSAC Adversarial Robustness Fine-Tuning
-
-Fine-tune SimSAC with adversarial positive/negative pairs to make it robust
-to adversarial perturbations while maintaining clean accuracy.
-
-This satisfies the capstone objective: "Fine-tune SimSAC with positive/negative pairs"
-
-Usage:
-    # Step 1: Create adversarial pair dataset
-    python train_simsac_adversarial_robust.py \
-        --mode create_pairs \
-        --clean_dir data/validation/carpet \
-        --adversarial_dir data/adversarial_strategy1_carpet \
-        --output_dir data/adversarial_pairs_carpet
-
-    # Step 2: Fine-tune SimSAC
-    python train_simsac_adversarial_robust.py \
-        --mode train \
-        --data_dir data/adversarial_pairs_carpet \
-        --output_dir checkpoints/simsac_robust \
-        --epochs 20 \
-        --batch_size 4
-
-    # Step 3: Evaluate robustness improvement
-    python train_simsac_adversarial_robust.py \
-        --mode evaluate \
-        --checkpoint checkpoints/simsac_robust/best_model.pth \
-        --clean_dir data/validation/carpet \
-        --adversarial_dir data/adversarial_strategy1_carpet
-"""
 
 import argparse
 from pathlib import Path
@@ -65,23 +34,8 @@ from src.tampering.parcel import PATCH_ORDER
 
 
 class AdversarialPairDataset(Dataset):
-    """
-    Dataset for adversarial robustness training.
-
-    Each sample contains:
-    - reference_patch: Reference surface patch
-    - field_patch: Field surface patch (clean or adversarial)
-    - label: 0 = similar (untampered), 1 = dissimilar (tampered)
-    - is_adversarial: Whether field is adversarial
-    """
 
     def __init__(self, pairs_file):
-        """
-        Load pairs from pickle file.
-
-        Args:
-            pairs_file: Path to pickle file containing list of pair dicts
-        """
         with open(pairs_file, 'rb') as f:
             all_pairs = pickle.load(f)
 
@@ -139,19 +93,8 @@ class AdversarialPairDataset(Dataset):
 
 
 class SimSaCRobust(nn.Module):
-    """
-    SimSAC wrapper for adversarial robustness fine-tuning.
-
-    Adds a contrastive head on top of SimSAC's change detection features.
-    """
 
     def __init__(self, freeze_backbone=True):
-        """
-        Initialize robust SimSAC model.
-
-        Args:
-            freeze_backbone: If True, freeze SimSAC backbone and only train head
-        """
         super().__init__()
 
         # Load pretrained SimSAC
@@ -172,27 +115,16 @@ class SimSaCRobust(nn.Module):
         # SimSAC outputs change maps of shape (H, W, 3)
         # We'll use global average pooling + MLP to get embeddings
         self.projection_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),  # Global average pool
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
             nn.Linear(3, 128),
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, 32)  # 32-dim embedding
+            nn.Linear(64, 32)
         )
 
     def forward(self, reference, field):
-        """
-        Forward pass.
-
-        Args:
-            reference: Reference image (B, C, H, W)
-            field: Field image (B, C, H, W)
-
-        Returns:
-            embedding: 32-dim embedding vector (B, 32)
-            change_map: Raw change map from SimSAC (B, H, W, 3)
-        """
         # Convert to numpy for SimSAC
         batch_size = reference.shape[0]
         embeddings = []
@@ -204,11 +136,11 @@ class SimSaCRobust(nn.Module):
 
             # Run SimSAC
             imgs = self.simsac.inference(ref_np, field_np)
-            change1 = imgs[0]  # First change map
+            change1 = imgs[0]
 
             # Convert to tensor (H, W, 3)
             change1_tensor = torch.from_numpy(change1).float().to(reference.device)
-            change1_tensor = change1_tensor.permute(2, 0, 1).unsqueeze(0)  # (1, 3, H, W)
+            change1_tensor = change1_tensor.permute(2, 0, 1).unsqueeze(0)
 
             # Get embedding
             embedding = self.projection_head(change1_tensor)
@@ -216,43 +148,23 @@ class SimSaCRobust(nn.Module):
             embeddings.append(embedding)
             change_maps.append(change1_tensor)
 
-        embeddings = torch.cat(embeddings, dim=0)  # (B, 32)
-        change_maps = torch.cat(change_maps, dim=0)  # (B, 3, H, W)
+        embeddings = torch.cat(embeddings, dim=0)
+        change_maps = torch.cat(change_maps, dim=0)
 
         return embeddings, change_maps
 
     def get_trainable_parameters(self):
-        """Get parameters that require gradients."""
         return [p for p in self.parameters() if p.requires_grad]
 
 
 class ContrastiveLoss(nn.Module):
-    """
-    Fixed Contrastive Loss using NT-Xent (Normalized Temperature-scaled Cross Entropy).
-
-    This is the loss used in SimCLR - more stable than naive pairwise contrastive loss.
-    """
 
     def __init__(self, temperature=0.5):
-        """
-        Args:
-            temperature: Temperature parameter for scaling (lower = harder negatives)
-        """
         super().__init__()
         self.temperature = temperature
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, embeddings, labels):
-        """
-        Compute NT-Xent contrastive loss.
-
-        Args:
-            embeddings: Embeddings (B, D)
-            labels: 0 = untampered, 1 = tampered
-
-        Returns:
-            loss: Contrastive loss
-        """
         batch_size = embeddings.shape[0]
 
         # Normalize embeddings
@@ -275,7 +187,7 @@ class ContrastiveLoss(nn.Module):
 
         # Compute log_prob
         exp_logits = torch.exp(logits)
-        exp_logits = exp_logits * (~self_mask).float()  # Mask out self
+        exp_logits = exp_logits * (~self_mask).float()
 
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True) + 1e-12)
 
@@ -289,19 +201,6 @@ class ContrastiveLoss(nn.Module):
 
 
 def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds=['carpet_adv_fgsm', 'carpet_adv_pgd'], max_parcels=None):
-    """
-    Create adversarial training pairs from clean and adversarial UV maps.
-
-    Creates positive pairs (untampered) and negative pairs (tampered) from both
-    clean and adversarial samples.
-
-    Args:
-        clean_dir: Directory with clean UV maps
-        adversarial_dir: Directory with adversarial UV maps
-        output_dir: Output directory for pairs
-        backgrounds: List of adversarial background names
-        max_parcels: Maximum number of parcels to process (None = all). Use 2-3 for quick testing.
-    """
     clean_dir = Path(clean_dir)
     adversarial_dir = Path(adversarial_dir)
     output_dir = Path(output_dir)
@@ -310,8 +209,8 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
     # Load tampering labels from tampering_mapping.csv
     # Try multiple possible locations
     possible_paths = [
-        parent_dir / 'src' / 'tampering' / 'tampering_mapping.csv',  # Standard location
-        Path('/content/tampar/src/tampering/tampering_mapping.csv'),  # Colab location
+        parent_dir / 'src' / 'tampering' / 'tampering_mapping.csv',
+        Path('/content/tampar/src/tampering/tampering_mapping.csv'),
     ]
 
     tampering_mapping_path = None
@@ -405,7 +304,7 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
             pairs.append({
                 'reference_patch': ref_patch_path,
                 'field_patch': field_patch_path,
-                'label': 1 if is_tampered else 0,  # 0=untampered, 1=tampered
+                'label': 1 if is_tampered else 0,
                 'is_adversarial': False,
                 'parcel_id': parcel_id,
                 'surface': surface_name,
@@ -503,17 +402,6 @@ def create_adversarial_pairs(clean_dir, adversarial_dir, output_dir, backgrounds
 
 
 def train_robust_simsac(data_dir, output_dir, epochs=20, batch_size=4, learning_rate=1e-4, freeze_backbone=True):
-    """
-    Train SimSAC for adversarial robustness.
-
-    Args:
-        data_dir: Directory with adversarial pairs
-        output_dir: Output directory for checkpoints
-        epochs: Number of training epochs
-        batch_size: Batch size
-        learning_rate: Learning rate
-        freeze_backbone: If True, freeze SimSAC backbone
-    """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

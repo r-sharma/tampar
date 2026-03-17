@@ -1,10 +1,3 @@
-"""
-Surface-Level Contrastive Pair Creation for TAMPAR Dataset
-Based on the contrastive learning strategy table.
-
-This version creates pairs at the SURFACE level (top, left, center, right, bottom)
-and uses tampering_mapping.csv to ensure positive pairs only use untampered surfaces.
-"""
 
 import os
 import json
@@ -30,15 +23,8 @@ from src.tampering.parcel import PATCH_ORDER
 
 
 class TamperingMapping:
-    """Load and query tampering information from tampering_mapping.csv"""
 
     def __init__(self, csv_path):
-        """
-        Load tampering mapping.
-
-        Args:
-            csv_path: Path to tampering_mapping.csv
-        """
         self.mapping = {}
         self.surface_names = ['center', 'top', 'bottom', 'left', 'right']
 
@@ -61,30 +47,18 @@ class TamperingMapping:
         print(f"✓ Loaded tampering mapping for {len(self.mapping)} parcels")
 
     def is_surface_tampered(self, parcel_id, surface_name):
-        """
-        Check if a surface is tampered.
-
-        Args:
-            parcel_id: Parcel ID (int)
-            surface_name: Surface name ('center', 'top', 'bottom', 'left', 'right')
-
-        Returns:
-            True if tampered, False if clean
-        """
         if parcel_id not in self.mapping:
-            return False  # Assume clean if no mapping
+            return False
 
         tampering_code = self.mapping[parcel_id].get(surface_name, '')
-        return tampering_code != ''  # Empty string means no tampering
+        return tampering_code != ''
 
     def get_tampering_code(self, parcel_id, surface_name):
-        """Get tampering code for a surface."""
         if parcel_id not in self.mapping:
             return ''
         return self.mapping[parcel_id].get(surface_name, '')
 
     def get_clean_surfaces(self, parcel_id):
-        """Get list of clean surface names for a parcel."""
         if parcel_id not in self.mapping:
             return self.surface_names
 
@@ -95,7 +69,6 @@ class TamperingMapping:
         return clean
 
     def get_tampered_surfaces(self, parcel_id):
-        """Get list of tampered surface names for a parcel."""
         if parcel_id not in self.mapping:
             return []
 
@@ -107,19 +80,9 @@ class TamperingMapping:
 
 
 class SurfaceExtractor:
-    """Extract individual surfaces from UV map images."""
 
     @staticmethod
     def extract_surfaces(uv_map_image):
-        """
-        Extract individual surfaces from UV map.
-
-        Args:
-            uv_map_image: PIL Image or numpy array of UV map
-
-        Returns:
-            Dictionary mapping surface_name -> surface_image (numpy array)
-        """
         # Convert PIL to numpy if needed
         if isinstance(uv_map_image, Image.Image):
             uv_map_array = np.array(uv_map_image)
@@ -132,7 +95,7 @@ class SurfaceExtractor:
         # Map patches to surface names using PATCH_ORDER
         surfaces = {}
         for i, (name, patch) in enumerate(zip(PATCH_ORDER, patches)):
-            if name != "":  # Skip empty slots in PATCH_ORDER
+            if name != "":
                 # Check if patch is not mostly white (mean < 250)
                 if np.mean(patch) < 250:
                     surfaces[name] = patch
@@ -141,7 +104,6 @@ class SurfaceExtractor:
 
 
 class AugmentationPipeline:
-    """Augmentation for creating positive pairs."""
 
     def __init__(self, rotation_range=5, brightness_range=0.1,
                  contrast_range=0.1, noise_std=0.02):
@@ -151,7 +113,6 @@ class AugmentationPipeline:
         self.noise_std = noise_std
 
     def augment(self, image):
-        """Apply augmentation to a surface patch."""
         # Convert numpy to PIL if needed
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image.astype(np.uint8))
@@ -180,18 +141,8 @@ class AugmentationPipeline:
 
 
 class SurfaceLevelPairCreator:
-    """Create surface-level contrastive pairs according to the strategy table."""
 
     def __init__(self, data_root, adversarial_root=None, tampering_csv_path=None, random_seed=42):
-        """
-        Initialize pair creator.
-
-        Args:
-            data_root: Path to TAMPAR dataset
-            adversarial_root: Path to adversarial TAMPAR dataset (optional)
-            tampering_csv_path: Path to tampering_mapping.csv
-            random_seed: Random seed
-        """
         self.data_root = Path(data_root)
         self.adversarial_root = Path(adversarial_root) if adversarial_root else None
 
@@ -222,22 +173,11 @@ class SurfaceLevelPairCreator:
         self.pair_stats = defaultdict(int)
 
     def load_data(self, split='validation'):
-        """
-        Load UV maps and extract surfaces.
-
-        Args:
-            split: 'validation' or 'test'
-
-        Returns:
-            Dictionary with reference and split surface data
-        """
-        print(f"\n{'='*70}")
         print(f"Loading Surface Data - {split.upper()}")
-        print(f"{'='*70}")
 
         data = {
-            'reference': {},  # parcel_id -> {surface_name -> surface_image}
-            split: {}         # parcel_id -> list of {surface_name -> surface_image, filename, type}
+            'reference': {},
+            split: {}
         }
 
         # Load reference UV maps from uvmaps/ folder
@@ -312,7 +252,7 @@ class SurfaceLevelPairCreator:
                     'filename': uv_file.name,
                     'type': uv_type,
                     'path': uv_file,
-                    'is_adversarial': False  # Clean data
+                    'is_adversarial': False
                 })
 
             print(f"✓ Loaded UV maps for {len(data[split])} parcels in {split}")
@@ -385,7 +325,7 @@ class SurfaceLevelPairCreator:
                         'type': uv_type,
                         'path': uv_file,
                         'is_adversarial': True,
-                        'attack_type': attack_type  # Store attack type
+                        'attack_type': attack_type
                     })
 
                 print(f"✓ Loaded adversarial UV maps for {len([p for p in data[split].keys() if any(c.get('is_adversarial', False) for c in data[split][p])])} parcels")
@@ -394,19 +334,7 @@ class SurfaceLevelPairCreator:
         return data
 
     def create_positive_pairs(self, split='validation'):
-        """
-        Create positive pairs according to the NEW strategy.
-
-        Positive pair types:
-        1. Clean reference vs clean uvmap_pred (all angles)
-        2. Clean reference vs clean uvmap_gt (all angles)
-        3. Clean reference vs augmented clean reference
-
-        Only uses surfaces that are CLEAN (untampered) in field images.
-        """
-        print(f"\n{'='*70}")
         print("Creating POSITIVE Pairs (Surface-Level)")
-        print(f"{'='*70}")
 
         pairs = []
 
@@ -493,7 +421,7 @@ class SurfaceLevelPairCreator:
         # Type 3: Clean reference vs augmented clean reference
         print("\n3. Clean Reference vs Augmented Clean Reference...")
         num_augmented = 0
-        num_variants = 2  # Number of augmented versions per surface
+        num_variants = 2
 
         for parcel_id in self.data['reference'].keys():
             # All reference surfaces are clean (no tampering in reference UV maps)
@@ -558,7 +486,7 @@ class SurfaceLevelPairCreator:
                     pairs.append({
                         'image1': ref_surface,
                         'surface2': adv_cap['surfaces'][surf_name],
-                        'label': 1,  # POSITIVE - same clean surface despite adversarial noise
+                        'label': 1,
                         'pair_type': 'clean_reference_vs_adversarial_clean',
                         'parcel_id': parcel_id,
                         'surface_name': surf_name,
@@ -580,19 +508,7 @@ class SurfaceLevelPairCreator:
         return pairs
 
     def create_negative_pairs(self, split='validation'):
-        """
-        Create negative pairs according to the NEW strategy.
-
-        Negative pair types:
-        1. Clean reference vs tampered uvmap_gt (all angles)
-        2. Clean reference vs tampered uvmap_pred (all angles)
-        3. Any reference vs adversarial clean (fgsm/pgd on clean surfaces)
-        4. Any reference vs adversarial tampered (fgsm/pgd on tampered surfaces)
-        5. Different parcels, same surface type
-        """
-        print(f"\n{'='*70}")
         print("Creating NEGATIVE Pairs (Surface-Level)")
-        print(f"{'='*70}")
 
         pairs = []
 
@@ -787,10 +703,7 @@ class SurfaceLevelPairCreator:
         return pairs
 
     def print_statistics(self):
-        """Print detailed statistics about created pairs."""
-        print(f"\n{'='*70}")
         print("PAIR CREATION STATISTICS")
-        print(f"{'='*70}")
 
         print("\n📊 POSITIVE PAIRS:")
         print(f"  Reference vs uvmap_pred (clean):     {self.pair_stats['positive_ref_vs_pred']:>6}")
@@ -825,7 +738,7 @@ class SurfaceLevelPairCreator:
             'negative': {
                 'reference_vs_tampered_gt': self.pair_stats['negative_ref_vs_tampered_gt'],
                 'reference_vs_tampered_pred': self.pair_stats['negative_ref_vs_tampered_pred'],
-                'reference_vs_adversarial_clean': self.pair_stats['negative_ref_vs_adv_clean'],  # Should be 0
+                'reference_vs_adversarial_clean': self.pair_stats['negative_ref_vs_adv_clean'],
                 'reference_vs_adversarial_tampered': self.pair_stats['negative_ref_vs_adv_tampered'],
                 'different_parcels_same_surface': self.pair_stats['negative_diff_parcels'],
                 'total': len(self.negative_pairs)
@@ -834,14 +747,6 @@ class SurfaceLevelPairCreator:
         }
 
     def visualize_pairs_for_parcel(self, parcel_id, output_dir=None, max_pairs_per_type=5):
-        """
-        Visualize all pairs created for a specific parcel ID.
-
-        Args:
-            parcel_id: Parcel ID to visualize (e.g., 1, 2, 7, 9)
-            output_dir: Directory to save visualizations (default: data_root)
-            max_pairs_per_type: Maximum pairs to show per pair type
-        """
         if output_dir is None:
             output_dir = self.data_root / f'pair_visualizations_parcel_{parcel_id:02d}'
         else:
@@ -849,9 +754,7 @@ class SurfaceLevelPairCreator:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n{'='*70}")
         print(f"Visualizing Pairs for Parcel {parcel_id:02d}")
-        print(f"{'='*70}")
 
         # Filter pairs for this parcel
         pos_pairs_parcel = [p for p in self.positive_pairs if p['parcel_id'] == parcel_id]
@@ -892,7 +795,6 @@ class SurfaceLevelPairCreator:
 
     def _visualize_pair_type(self, pairs, pair_type, parcel_id, output_dir,
                             max_pairs=5, is_positive=True):
-        """Visualize a specific pair type."""
         if not pairs:
             return
 
@@ -960,13 +862,6 @@ class SurfaceLevelPairCreator:
         print(f"  ✓ {label_str}: {pair_type} ({num_pairs} pairs) -> {output_file.name}")
 
     def visualize_all_pairs_summary(self, output_dir=None, samples_per_type=3):
-        """
-        Create a summary visualization showing examples of all pair types.
-
-        Args:
-            output_dir: Directory to save visualization
-            samples_per_type: Number of examples per pair type
-        """
         if output_dir is None:
             output_dir = self.data_root / 'pair_visualizations_summary'
         else:
@@ -974,9 +869,7 @@ class SurfaceLevelPairCreator:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n{'='*70}")
         print("Creating Summary Visualization of All Pair Types")
-        print(f"{'='*70}")
 
         # Group positive pairs by type
         pos_by_type = defaultdict(list)
@@ -1044,13 +937,10 @@ class SurfaceLevelPairCreator:
         return output_dir
 
     def save_pairs(self, output_dir, train_split=0.8):
-        """Save pairs as PyTorch-ready dataset."""
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n{'='*70}")
         print("Saving Pairs Dataset")
-        print(f"{'='*70}")
 
         # Combine and shuffle
         all_pairs = self.positive_pairs + self.negative_pairs
@@ -1157,23 +1047,17 @@ def main():
 
     # Visualizations
     if args.visualize_parcel is not None:
-        print(f"\n{'='*70}")
         print(f"Creating Visualizations for Parcel {args.visualize_parcel:02d}")
-        print(f"{'='*70}")
         creator.visualize_pairs_for_parcel(
             args.visualize_parcel,
             max_pairs_per_type=args.max_pairs_viz
         )
 
     if args.visualize_summary:
-        print(f"\n{'='*70}")
         print("Creating Summary Visualizations")
-        print(f"{'='*70}")
         creator.visualize_all_pairs_summary(samples_per_type=args.max_pairs_viz)
 
-    print(f"\n{'='*70}")
     print("✓ Surface-Level Pair Creation Complete!")
-    print(f"{'='*70}")
 
 
 if __name__ == "__main__":

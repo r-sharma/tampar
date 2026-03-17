@@ -1,24 +1,3 @@
-"""
-Task 5.8: Extract Improved Similarity Features for Classification
-
-Extract features from fine-tuned SimSaC for downstream tampering detection.
-Supports both full UV map level and surface-level feature extraction.
-
-Usage:
-    # Surface-level feature extraction (recommended, matches TAMPAR paper)
-    python extract_features_for_tampering.py \
-        --checkpoint /content/outputs/training/best_model.pth \
-        --data_root /content/tampar/data/tampar_sample \
-        --mode surface \
-        --output_dir /content/outputs/features
-
-    # Full UV map level feature extraction
-    python extract_features_for_tampering.py \
-        --checkpoint /content/outputs/training/best_model.pth \
-        --data_root /content/tampar/data/tampar_sample \
-        --mode uvmap \
-        --output_dir /content/outputs/features
-"""
 
 import os
 import argparse
@@ -43,10 +22,7 @@ from src.tampering.parcel import get_side_surface_patches
 
 
 def load_model(checkpoint_path, device='cuda'):
-    """Load trained contrastive model."""
-    print(f"\n{'='*70}")
     print("Loading Fine-tuned Model")
-    print(f"{'='*70}")
     print(f"Checkpoint: {checkpoint_path}")
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -103,12 +79,6 @@ def load_model(checkpoint_path, device='cuda'):
 
 
 def extract_surfaces_from_uvmap(uv_map_path):
-    """
-    Extract individual surfaces from UV map.
-
-    Returns:
-        Dictionary mapping surface_name -> surface_array
-    """
     from PIL import Image
     import numpy as np
 
@@ -124,36 +94,14 @@ def extract_surfaces_from_uvmap(uv_map_path):
 
     surfaces_dict = {}
     for i, name in enumerate(patch_order):
-        if name:  # Skip empty strings
+        if name:
             surfaces_dict[name] = surfaces_list[i]
 
     return surfaces_dict
 
 
 def load_surface_data(data_root, split='validation'):
-    """
-    Load UV maps and extract surfaces.
-
-    Returns:
-        Dictionary with structure:
-        {
-            parcel_id: {
-                'reference': {surface_name: surface_array, ...},
-                'field_captures': [
-                    {
-                        'type': 'gt' or 'pred',
-                        'filename': str,
-                        'surfaces': {surface_name: surface_array, ...}
-                    },
-                    ...
-                ]
-            },
-            ...
-        }
-    """
-    print(f"\n{'='*70}")
     print(f"Loading Surface-Level Data from {split.upper()}")
-    print(f"{'='*70}")
 
     data_root = Path(data_root)
     split_dir = data_root / split
@@ -237,12 +185,6 @@ def load_surface_data(data_root, split='validation'):
 
 
 def load_tampering_mapping(tampering_csv_path):
-    """
-    Load tampering mapping CSV.
-
-    Returns:
-        Dictionary mapping (parcel_id, surface_name) -> tampering_code
-    """
     tampering_map = {}
 
     with open(tampering_csv_path, 'r') as f:
@@ -261,20 +203,7 @@ def load_tampering_mapping(tampering_csv_path):
 
 
 def extract_surface_features(model, surface_data, device='cuda'):
-    """
-    Extract contrastive features for each surface.
-
-    Returns:
-        Dictionary with structure:
-        {
-            (parcel_id, 'reference', surface_name): embedding,
-            (parcel_id, filename, surface_name): embedding,
-            ...
-        }
-    """
-    print(f"\n{'='*70}")
     print("Extracting Surface-Level Features")
-    print(f"{'='*70}")
 
     # Image preprocessing
     transform = transforms.Compose([
@@ -301,7 +230,7 @@ def extract_surface_features(model, surface_data, device='cuda'):
 
                 # Transform and extract embedding
                 img_tensor = transform(surf_img).unsqueeze(0).to(device)
-                z, _ = model(img_tensor, img_tensor)  # Pass same image twice
+                z, _ = model(img_tensor, img_tensor)
                 z = z[0].cpu().numpy()
 
                 surface_features[(parcel_id, 'reference', surf_name)] = z
@@ -329,22 +258,7 @@ def extract_surface_features(model, surface_data, device='cuda'):
 
 
 def compute_surface_pairwise_features(surface_features, surface_data, tampering_map, output_dir):
-    """
-    Compute pairwise similarity features between reference and field surfaces.
-    Creates feature vectors for tampering detection at surface-level.
-
-    Returns CSV with columns:
-    - parcel_id
-    - capture_filename
-    - surface_name
-    - cosine_similarity
-    - l2_distance
-    - is_tampered (from tampering_mapping.csv)
-    - tampering_code
-    """
-    print(f"\n{'='*70}")
     print("Computing Surface-Level Pairwise Features")
-    print(f"{'='*70}")
 
     results = []
 
@@ -432,15 +346,7 @@ def compute_surface_pairwise_features(surface_features, surface_data, tampering_
 
 
 def load_uv_maps(data_root, split='validation'):
-    """
-    Load UV maps from TAMPAR dataset.
-    
-    Returns:
-        Dictionary mapping parcel_id -> list of UV map paths
-    """
-    print(f"\n{'='*70}")
     print(f"Loading UV Maps from {split.upper()}")
-    print(f"{'='*70}")
     
     data_root = Path(data_root)
     split_dir = data_root / split
@@ -453,7 +359,7 @@ def load_uv_maps(data_root, split='validation'):
         ref_files = list(uvmaps_dir.glob('*.png'))
         print(f"Found {len(ref_files)} reference UV maps")
         for ref_file in ref_files:
-            parcel_id = ref_file.stem  # e.g., "id_01_uvmap" or just "0"
+            parcel_id = ref_file.stem
             uv_maps[f"{parcel_id}_ref"] = str(ref_file)
     
     # Load predicted UV maps
@@ -480,15 +386,7 @@ def load_uv_maps(data_root, split='validation'):
 
 
 def extract_contrastive_features(model, uv_maps, device='cuda'):
-    """
-    Extract contrastive features from UV maps.
-    
-    Returns:
-        features_dict: Dictionary mapping UV map key -> feature vector (128-dim)
-    """
-    print(f"\n{'='*70}")
     print("Extracting Contrastive Features")
-    print(f"{'='*70}")
     
     # Image preprocessing
     transform = transforms.Compose([
@@ -510,8 +408,8 @@ def extract_contrastive_features(model, uv_maps, device='cuda'):
             img_tensor = transform(img).unsqueeze(0).to(device)
             
             # Extract embedding
-            z, _ = model(img_tensor, img_tensor)  # Pass same image twice
-            z = z[0].cpu().numpy()  # Take first (they're identical)
+            z, _ = model(img_tensor, img_tensor)
+            z = z[0].cpu().numpy()
             
             features_dict[key] = z
     
@@ -522,14 +420,7 @@ def extract_contrastive_features(model, uv_maps, device='cuda'):
 
 
 def compute_pairwise_features(features_dict, output_dir):
-    """
-    Compute pairwise similarity features between reference and predicted UV maps.
-    
-    This creates the feature vectors for tampering detection classifier.
-    """
-    print(f"\n{'='*70}")
     print("Computing Pairwise Similarity Features")
-    print(f"{'='*70}")
     
     # Separate reference and predicted features
     ref_features = {k: v for k, v in features_dict.items() if '_ref' in k}
@@ -577,8 +468,8 @@ def compute_pairwise_features(features_dict, output_dir):
             features = {
                 'cosine_similarity': cos_sim,
                 'l2_distance': l2_dist,
-                'concatenated': concat_feat,  # 256-dim (128 + 128)
-                'difference': diff_feat,       # 128-dim
+                'concatenated': concat_feat,
+                'difference': diff_feat,
             }
             
             feature_pairs.append(features)
@@ -618,20 +509,7 @@ def compute_pairwise_features(features_dict, output_dir):
 
 
 def extract_baseline_features(data_root, output_dir):
-    """
-    Extract baseline TAMPAR features for comparison.
-    
-    These would be the original features used by TAMPAR:
-    - MS-SSIM
-    - CW-SSIM
-    - HOG
-    - Etc.
-    
-    For now, this is a placeholder showing the structure.
-    """
-    print(f"\n{'='*70}")
     print("Extracting Baseline TAMPAR Features (Placeholder)")
-    print(f"{'='*70}")
     
     # TODO: Implement baseline feature extraction
     # This would require running TAMPAR's original feature extraction pipeline
@@ -653,10 +531,7 @@ def extract_baseline_features(data_root, output_dir):
 
 
 def create_summary(features_dict, feature_pairs, output_dir):
-    """Create summary of extracted features."""
-    print(f"\n{'='*70}")
     print("Creating Summary")
-    print(f"{'='*70}")
     
     summary = {
         'total_uv_maps': len(features_dict),
@@ -715,9 +590,7 @@ def main():
 
     device = args.device if torch.cuda.is_available() else 'cpu'
 
-    print(f"\n{'='*70}")
     print("Feature Extraction for Tampering Detection (Task 5.8)")
-    print(f"{'='*70}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Data root: {args.data_root}")
     print(f"Mode: {args.mode}")
@@ -730,9 +603,7 @@ def main():
 
     if args.mode == 'surface':
         # SURFACE-LEVEL FEATURE EXTRACTION (matches TAMPAR paper)
-        print(f"\n{'='*70}")
         print("MODE: Surface-Level Feature Extraction")
-        print(f"{'='*70}")
 
         # Load tampering mapping
         if args.tampering_csv is None:
@@ -757,9 +628,7 @@ def main():
             surface_features, surface_data, tampering_map, output_dir
         )
 
-        print(f"\n{'='*70}")
         print("✓ Surface-Level Feature Extraction Complete!")
-        print(f"{'='*70}")
         print(f"\nGenerated files:")
         print(f"  - surface_features.csv (for classifier training)")
         print(f"  - surface_features.pkl (Python object)")
@@ -771,9 +640,7 @@ def main():
 
     else:
         # FULL UV MAP FEATURE EXTRACTION (original implementation)
-        print(f"\n{'='*70}")
         print("MODE: Full UV Map Feature Extraction")
-        print(f"{'='*70}")
 
         # Load UV maps
         uv_maps = load_uv_maps(args.data_root, args.split)
@@ -790,9 +657,7 @@ def main():
         # Create summary
         create_summary(features_dict, feature_pairs, output_dir)
 
-        print(f"\n{'='*70}")
         print("✓ UV Map Feature Extraction Complete!")
-        print(f"{'='*70}")
         print(f"\nGenerated files:")
         print(f"  - contrastive_features.pkl (full features)")
         print(f"  - contrastive_features.npz (similarity metrics)")

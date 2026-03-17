@@ -1,20 +1,3 @@
-"""
-Task 5: SimSaC Contrastive Training Script
-
-Main training loop for fine-tuning SimSaC with contrastive learning.
-
-Supports both full UV map pairs and surface-level pairs.
-
-Usage:
-    # Phase 1: Frozen backbone (auto-detects surface-level pairs)
-    python train_simsac_contrastive.py --phase 1 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface
-
-    # Phase 2: Full fine-tuning
-    python train_simsac_contrastive.py --phase 2 --data_dir /content/tampar/data/tampar_sample/contrastive_pairs_surface --checkpoint phase1_final.pth
-
-    # Explicitly specify pair files
-    python train_simsac_contrastive.py --phase 1 --data_dir /path/to/dir --train_pairs train_pairs_surface_level.pkl --val_pairs val_pairs_surface_level.pkl
-"""
 
 import os
 import argparse
@@ -36,19 +19,8 @@ from simsac_contrastive_model import create_simsac_contrastive
 
 
 class Trainer:
-    """Trainer for SimSaC contrastive learning."""
     
     def __init__(self, model, train_loader, val_loader, config, device='cuda'):
-        """
-        Initialize trainer.
-        
-        Args:
-            model: SimSaCContrastive model
-            train_loader: Training data loader
-            val_loader: Validation data loader
-            config: Training configuration dict
-            device: Device to train on
-        """
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -61,7 +33,7 @@ class Trainer:
             lambda_flow=config.get('lambda_flow', 0.0),
             lambda_change=config.get('lambda_change', 0.0),
             temperature=config['temperature'],
-            use_simplified=True,  # Use simplified loss with explicit labels
+            use_simplified=True,
             use_weighted=config.get('use_weighted', False),
             adversarial_weight=config.get('adversarial_weight', 3.0)
         )
@@ -76,12 +48,12 @@ class Trainer:
         # Learning rate scheduler - ReduceLROnPlateau (adaptive)
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,
-            mode='min',              # Minimize validation loss
-            factor=0.5,              # Reduce LR by half when plateau
-            patience=3,              # Wait 3 epochs before reducing
-            min_lr=1e-6,            # Minimum learning rate
-            threshold=0.01,          # Threshold for measuring improvement
-            threshold_mode='rel'     # Relative threshold
+            mode='min',
+            factor=0.5,
+            patience=3,
+            min_lr=1e-6,
+            threshold=0.01,
+            threshold_mode='rel'
         )
         
         # Training history
@@ -95,7 +67,6 @@ class Trainer:
         self.start_epoch = 0
     
     def train_epoch(self, epoch):
-        """Train for one epoch."""
         self.model.train()
         
         total_loss = 0
@@ -160,7 +131,6 @@ class Trainer:
         return avg_loss, loss_components
     
     def validate(self, epoch):
-        """Validate on validation set."""
         self.model.eval()
         
         total_loss = 0
@@ -213,10 +183,7 @@ class Trainer:
         return avg_loss, loss_components
     
     def train(self, output_dir):
-        """Main training loop."""
-        print(f"\n{'='*70}")
         print(f"Starting Training - Phase {self.config['phase']}")
-        print(f"{'='*70}")
         print(f"Epochs: {self.config['epochs']}")
         print(f"Learning rate: {self.config['learning_rate']}")
         print(f"Batch size: {self.config['batch_size']}")
@@ -274,14 +241,11 @@ class Trainer:
         # Final plots
         self.plot_progress(output_dir)
         
-        print(f"\n{'='*70}")
         print(f"Training Complete!")
-        print(f"{'='*70}")
         print(f"Best validation loss: {self.best_val_loss:.4f}")
         print(f"Final checkpoint: {output_dir}/phase{self.config['phase']}_final.pth")
     
     def save_checkpoint(self, epoch, output_dir, is_best=False, filename=None):
-        """Save model checkpoint in TAMPAR-compatible format."""
         if filename is None:
             filename = f"checkpoint_epoch_{epoch+1}.pth"
 
@@ -293,14 +257,14 @@ class Trainer:
         for key, value in full_state_dict.items():
             if key.startswith('simsac.'):
                 # Remove "simsac." prefix to match TAMPAR's format
-                new_key = key[7:]  # Remove "simsac." (7 characters)
+                new_key = key[7:]
                 simsac_state_dict[new_key] = value
             # Skip projection_head.* keys - they're not needed for TAMPAR inference
 
         # Save checkpoint with TAMPAR-compatible format
         checkpoint = {
             'epoch': epoch + 1,
-            'state_dict': simsac_state_dict,  # Only base SimSaC weights, no prefix
+            'state_dict': simsac_state_dict,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_val_loss': self.best_val_loss,
@@ -320,7 +284,6 @@ class Trainer:
             print(f"  ✓ New best model saved: {best_path}")
     
     def load_checkpoint(self, checkpoint_path):
-        """Load checkpoint to resume training."""
         print(f"\nLoading checkpoint from: {checkpoint_path}")
 
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -348,7 +311,6 @@ class Trainer:
         print(f"  Best val loss so far: {self.best_val_loss:.4f}")
     
     def plot_progress(self, output_dir):
-        """Plot training progress."""
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
         
         epochs = range(1, len(self.history['train_loss']) + 1)
@@ -446,8 +408,8 @@ def main():
         'temperature': args.temperature,
         'freeze_backbone': (args.phase == 1),
         'lambda_contrastive': 1.0,
-        'lambda_flow': 0.0,  # Not using flow loss for now
-        'lambda_change': 0.0,  # Not using change loss for now
+        'lambda_flow': 0.0,
+        'lambda_change': 0.0,
         'weight_decay': 1e-4,
         'min_lr': 1e-6,
         'gradient_clip': 1.0,
@@ -456,9 +418,7 @@ def main():
         'adversarial_weight': args.adversarial_weight
     }
     
-    print(f"\n{'='*70}")
     print("SimSaC Contrastive Training")
-    print(f"{'='*70}")
     print(f"Phase: {args.phase}")
     print(f"Device: {device}")
 
@@ -561,7 +521,7 @@ def main():
                 'val_loss': [],
                 'learning_rate': []
             }
-            trainer.start_epoch = 0  # Start from epoch 0 for Phase 2
+            trainer.start_epoch = 0
             print("✓ Scheduler and history reset for Phase 2")
     
     # Train

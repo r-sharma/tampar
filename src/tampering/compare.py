@@ -17,7 +17,7 @@ try:
     from src.simsac.inference import SimSaC
 except ImportError as e:
     print(f"Could not import SimSaC: {repr(e)}")
-from src.tampering.metrics import (  # noqa
+from src.tampering.metrics import (
     compute_cwssim,
     compute_hog,
     compute_lpips,
@@ -149,7 +149,7 @@ def compute_uvmap_similarity(
     ):
         metrics = {}
         if np.mean(input_patch1) >= 250 or np.mean(input_patch2) >= 250:
-            continue  # skip
+            continue
         patch1, patch2 = apply_homogenization(compare_type, input_patch1, input_patch2, simsac_ckpt_path=simsac_ckpt_path)
 
         for metric in METRICS:
@@ -173,12 +173,12 @@ def compute_uvmap_similarity(
                     img,
                     ((2, 2), (2, 2), (0, 0)),
                     constant_values=0,
-                )  # black margin
+                )
                 img = np.pad(
                     img,
                     ((0, 0), (pad_size, pad_size), (0, 0)),
                     constant_values=255,
-                )  # white padding
+                )
                 summary_imgs.append(img)
             summary = np.hstack(summary_imgs)
             plt.imshow(summary.astype(int))

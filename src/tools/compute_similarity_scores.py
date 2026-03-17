@@ -17,7 +17,7 @@ from src.tampering.compare import CompareType, compute_uvmap_similarity
 IMAGE_ROOT = ROOT / "data" / "tampar_sample"
 UVMAP_DIR = IMAGE_ROOT / "uvmaps"
 OUT_IMAGES = ROOT / "out_imgs"
-NUM_WORKERS = 4  # Use 4 parallel workers for faster processing
+NUM_WORKERS = 4
 
 
 def load_tampering_mapping():
@@ -44,7 +44,7 @@ def compute_sidesurface_similarity_scores(
         similarities = compute_uvmap_similarity(
             gt_uvmap,
             reference_image,
-            output_path=None,  # only if visualize False
+            output_path=None,
             compare_type=compare_type,
             visualize=False,
             simsac_ckpt_path=simsac_ckpt_path,
@@ -123,15 +123,6 @@ def compute_parcel_similitary_scores(parcel_id: int, image_path: Path, parallel=
 
 
 def main(parallel=False, simsac_ckpt_path: str = None, num_workers: int = None, exclude_base: bool = True) -> pd.DataFrame:
-    """
-    Compute similarity scores using SimSAC.
-
-    Args:
-        parallel: Use parallel processing
-        simsac_ckpt_path: Path to SimSAC checkpoint file (default: synthetic.pth)
-        num_workers: Number of parallel workers (default: 4)
-        exclude_base: Exclude base folders (base, base_adv_*, etc.) (default: True)
-    """
     if simsac_ckpt_path:
         print(f"Using custom SimSAC checkpoint: {simsac_ckpt_path}")
     else:
@@ -143,7 +134,7 @@ def main(parallel=False, simsac_ckpt_path: str = None, num_workers: int = None, 
         print("Including all folders (base folders will be processed)")
 
     results = []
-    for folder_name in ["validation"]:  # , "test"]:
+    for folder_name in ["validation"]:
         input_folder = IMAGE_ROOT / folder_name
         output_path = OUT_IMAGES / input_folder.name
         output_path.mkdir(exist_ok=True, parents=True)

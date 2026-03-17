@@ -1,46 +1,3 @@
-"""
-Generate Adversarial Raw Field Images (SimSAC-Targeted)
-
-Attacks the original 3D field images (e.g., id_01_20230516_142710.jpg) directly,
-BEFORE UV map generation. After running this script, you generate UV maps from
-the adversarial images using the standard pipeline (MaskRCNN + UV unwrapping).
-
-This is different from generate_adversarial_simsac_targeted.py which attacks
-pre-generated UV maps. Attacking the raw image is more realistic because:
-  1. The adversarial perturbation propagates naturally through the UV map generation
-  2. The resulting UV maps are adversarial in a physically plausible way
-  3. You can evaluate the full pipeline robustness end-to-end
-
-Input naming convention:  id_01_20230516_142710.jpg
-Output naming convention: id_01_20230516_142710_fgsm.jpg
-                          id_01_20230516_142710_pgd.jpg
-
-Usage:
-    # FGSM attack on all folders except base
-    python extension/generate_adversarial_raw_images.py \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation_adv_raw \\
-        --attack fgsm \\
-        --exclude_folders base \\
-        --epsilon 0.05
-
-    # FGSM + PGD on specific folders
-    python extension/generate_adversarial_raw_images.py \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation_adv_raw \\
-        --attack both \\
-        --folders carpet gravel table floor stairs cubblestone \\
-        --epsilon 0.1 \\
-        --pgd_steps 20
-
-    # Write adversarial images back into same folder as originals (in-place style)
-    python extension/generate_adversarial_raw_images.py \\
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \\
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \\
-        --attack both \\
-        --exclude_folders base \\
-        --epsilon 0.05
-"""
 
 import os
 import sys
@@ -64,7 +21,6 @@ from src.simsac.models.our_models.SimSaC import SimSaC_Model
 # ---------------------------------------------------------------------------
 
 def load_simsac_model(checkpoint_path, device='cuda'):
-    """Load pre-trained SimSAC model and enable gradient flow."""
     print(f"Loading SimSAC model from {checkpoint_path}...")
 
     model = SimSaC_Model(
@@ -90,7 +46,6 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     print("  Enabling gradient flow through SimSAC (removing no_grad wrapper)...")
 
     def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
-        """Modified forward that allows gradients to flow."""
         b, _, h_full, w_full = im_target.size()
 
         im1_pyr = self.pyramid(im_target, eigth_resolution=True)
@@ -126,15 +81,6 @@ def load_simsac_model(checkpoint_path, device='cuda'):
 # ---------------------------------------------------------------------------
 
 class RawImageAttackGenerator:
-    """
-    Generate adversarial perturbations on raw field images targeting
-    SimSAC's change/correlation map output.
-
-    The key idea: by attacking the raw JPEG image (before UV map generation),
-    the adversarial noise propagates through the entire pipeline naturally.
-    SimSAC's change map is used as the loss signal — we minimize it so
-    tampered surfaces appear clean to the detector.
-    """
 
     def __init__(self, simsac_model, epsilon=0.05, device='cuda'):
         self.simsac = simsac_model
@@ -143,12 +89,6 @@ class RawImageAttackGenerator:
         self.device = device
 
     def simsac_change_loss(self, field_img, reference_img):
-        """
-        Compute loss based on SimSAC change/correlation output.
-
-        We MINIMIZE the change map magnitude so the model thinks
-        the tampered surface is clean (low change = looks unmodified).
-        """
         field_512 = F.interpolate(field_img, size=(512, 512), mode='bilinear', align_corners=False)
         reference_512 = F.interpolate(reference_img, size=(512, 512), mode='bilinear', align_corners=False)
         field_256 = F.interpolate(field_img, size=(256, 256), mode='bilinear', align_corners=False)
@@ -179,16 +119,6 @@ class RawImageAttackGenerator:
         return loss
 
     def fgsm_attack(self, field_img, reference_img):
-        """
-        Single-step FGSM attack on field image.
-
-        Args:
-            field_img: Raw field image tensor [1, C, H, W], values in [0, 1]
-            reference_img: Reference UV map tensor [1, C, H, W]
-
-        Returns:
-            Adversarial image tensor [1, C, H, W]
-        """
         field_img = field_img.clone().detach()
         reference_img = reference_img.clone().detach()
         field_img.requires_grad = True
@@ -210,18 +140,6 @@ class RawImageAttackGenerator:
         return adv_field
 
     def pgd_attack(self, field_img, reference_img, steps=10, step_size=None):
-        """
-        Multi-step PGD attack on field image.
-
-        Args:
-            field_img: Raw field image tensor [1, C, H, W], values in [0, 1]
-            reference_img: Reference UV map tensor [1, C, H, W]
-            steps: Number of PGD iterations
-            step_size: Step size per iteration (default: epsilon / 4)
-
-        Returns:
-            Adversarial image tensor [1, C, H, W]
-        """
         if step_size is None:
             step_size = self.epsilon / 4
 
@@ -243,21 +161,9 @@ class RawImageAttackGenerator:
         return adv_field
 
     def attack_image(self, field_path, reference_path, attack_type='fgsm', pgd_steps=10):
-        """
-        Load a raw field image, attack it, and return the adversarial numpy array.
-
-        Args:
-            field_path: Path to raw field JPEG (e.g., id_01_20230516_142710.jpg)
-            reference_path: Path to reference UV map (e.g., id_01_uvmap.png)
-            attack_type: 'fgsm' or 'pgd'
-            pgd_steps: Number of PGD steps (only for pgd)
-
-        Returns:
-            Adversarial image as numpy array (H, W, 3) uint8
-        """
         # Load field image (JPEG)
         field_img = Image.open(field_path).convert('RGB')
-        original_size = field_img.size  # (W, H) — PIL convention
+        original_size = field_img.size
 
         # Load reference UV map
         reference_img = Image.open(reference_path).convert('RGB')
@@ -295,21 +201,8 @@ class RawImageAttackGenerator:
 # ---------------------------------------------------------------------------
 
 def find_reference_uvmap(field_image_path, uvmaps_dir):
-    """
-    Find the reference UV map for a given field image.
-
-    Field image naming: id_01_20230516_142710.jpg
-    Reference UV map:   id_01_uvmap.png  (in uvmaps_dir)
-
-    Args:
-        field_image_path: Path to raw field JPEG
-        uvmaps_dir: Directory containing reference UV maps
-
-    Returns:
-        Path to matching reference UV map
-    """
-    filename = field_image_path.stem  # e.g., id_01_20230516_142710
-    parcel_id = filename.split('_')[1]  # e.g., '01'
+    filename = field_image_path.stem
+    parcel_id = filename.split('_')[1]
 
     reference_name = f"id_{parcel_id}_uvmap.png"
     reference_path = uvmaps_dir / reference_name
@@ -343,31 +236,6 @@ def generate_adversarial_raw_dataset(
     pgd_steps=10,
     copy_originals=True,
 ):
-    """
-    Attack raw field images and save adversarial versions alongside originals.
-
-    Output structure mirrors input structure. For each input:
-        id_01_20230516_142710.jpg
-    Generates:
-        id_01_20230516_142710_fgsm.jpg   (if attack=fgsm or both)
-        id_01_20230516_142710_pgd.jpg    (if attack=pgd or both)
-
-    If output_dir == data_dir, adversarial images are written in-place.
-    If output_dir != data_dir, original files are also copied over (unless
-    copy_originals=False).
-
-    Args:
-        data_dir: Input directory containing background subfolders
-        output_dir: Output directory (can be same as data_dir)
-        simsac_checkpoint: Path to SimSAC checkpoint .pth file
-        uvmaps_dir: Directory with reference UV maps (auto-detected if None)
-        attack_type: 'fgsm', 'pgd', or 'both'
-        folders: Include only these subfolders (None = all)
-        exclude_folders: Exclude these subfolders (e.g., ['base'])
-        epsilon: Perturbation magnitude
-        pgd_steps: Number of PGD iterations
-        copy_originals: If True and output_dir != data_dir, copy original .jpg files too
-    """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -387,9 +255,7 @@ def generate_adversarial_raw_dataset(
     # Determine attack types
     attacks = ['fgsm', 'pgd'] if attack_type == 'both' else [attack_type]
 
-    print(f"\n{'=' * 70}")
     print("Adversarial Raw Image Generation (SimSAC-Targeted)")
-    print(f"{'=' * 70}")
     print(f"Input directory:     {data_dir}")
     print(f"Reference UV maps:   {uvmaps_dir}")
     print(f"Output directory:    {output_dir}")
@@ -428,7 +294,7 @@ def generate_adversarial_raw_dataset(
         # Pattern: id_XX_YYYYMMDD_HHMMSS.jpg  (no attack suffix in stem)
         raw_images = []
         for f in sorted(subdir.glob("*.jpg")):
-            stem = f.stem  # e.g., id_01_20230516_142710
+            stem = f.stem
             parts = stem.split('_')
             # Original images have exactly 4 parts: id, XX, YYYYMMDD, HHMMSS
             # Attacked images have 5 parts: id, XX, YYYYMMDD, HHMMSS, fgsm/pgd
@@ -488,9 +354,7 @@ def generate_adversarial_raw_dataset(
                     print(f"  ✗ Error on {field_path.name} ({attack}): {e}")
                     errors += 1
 
-    print(f"\n{'=' * 70}")
     print("✓ Adversarial raw image generation complete!")
-    print(f"{'=' * 70}")
     for attack, count in stats.items():
         print(f"  {attack.upper()} adversarial images: {count}")
     print(f"  Errors / skipped:        {errors}")

@@ -1,63 +1,3 @@
-"""
-SimSAC Direct Change Map Fine-tuning (Path C — No contrastive loss)  [v2]
-
-Directly fine-tunes SimSAC's change map output on pre-generated adversarial
-UV maps from contrastive_pairs_surface_wb_test. No projection head. No
-contrastive loss. No temperature.
-
-Key design decisions that make this reliable:
-
-  1. DIRECT change map loss — optimises exactly what predict_tampering uses
-     Tampered pairs → push change map HIGH
-     Clean pairs    → push change map LOW
-
-  2. ALL layers unfrozen — pyramid (VGG, 7.7M) + decoder (~10.5M)
-     v1 bug: SimSaC_Model(evaluation=True) starts with pyramid frozen by default.
-     Without explicit requires_grad_(True), the optimizer only saw decoder params.
-     The PGD/FGSM attack lives in the pyramid features — training only the decoder
-     cannot unlearn the adversarial vulnerability → separation stays flat at -0.009.
-     Fix: explicitly unfreeze ALL parameters before creating the optimizer.
-     Two LR groups: pyramid at lr×0.1 (conservative), decoder at lr (full speed).
-
-  3. L2 regularisation toward original synthetic.pth weights (ALL params)
-     Prevents catastrophic forgetting of clean-image performance.
-     lambda_reg default raised to 0.5 (from v1's 0.1) because pyramid is now
-     trainable — stronger anchoring needed to prevent clean accuracy from dropping.
-
-  4. Mixed data per batch (clean + adversarial together in the pkl)
-     The contrastive_pairs_surface_wb_test pkl already contains both clean and
-     adversarial pairs (adversarial_simsac_test_wb_ep_10). Model sees both
-     distributions every epoch → cannot forget clean while learning robustness.
-
-  5. Per-epoch evaluation on BOTH clean and adversarial validation
-     val_loader is the mixed val pkl; evaluate_separation splits by is_adv flag.
-     Best checkpoint selected by: 0.5 * clean_sep + 0.5 * adv_sep
-     where sep = tampered_mean_cm - clean_mean_cm (higher = better)
-
-v1 failure analysis:
-  - VGG pyramid was frozen (requires_grad=False, 7.7M params) by default.
-  - Change map separation stayed flat at ~-0.009 across all 15 epochs.
-  - Negative separation = tampered has LOWER change magnitude than clean
-    (adversarial attack's effect). Training only the decoder cannot overcome
-    compromised pyramid features — gradient never reached the attacked layer.
-  - Loss oscillated around a constant with no downward trend (noise only).
-
-Why this works against pre-generated PGD/FGSM attacks:
-  - Attack was generated ONCE with original synthetic.pth (fixed perturbations)
-  - Model trains to recognise and resist THOSE specific perturbation patterns
-  - Unlike online training (arms race), this is stable offline adversarial training
-  - L2 reg ensures neither pyramid nor decoder move far from original → clean preserved
-
-Usage:
-    python extension/train_simsac_direct_cm.py \\
-        --clean_pairs  /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/train_pairs_surface_level.pkl \\
-        --val_pairs    /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/val_pairs_surface_level.pkl \\
-        --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
-        --output_dir   /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_direct_cm \\
-        --lr 1e-5 \\
-        --lambda_reg 0.5 \\
-        --epochs 15
-"""
 
 import sys
 import types
@@ -86,7 +26,6 @@ from contrastive_dataset import ContrastivePairsDataset
 # ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
-    """Remove internal no_grad() wrapper so change map loss can backprop."""
     def forward_with_grad(self, im_target, im_source,
                           im_target_256, im_source_256, disable_flow=None):
         im1_pyr = self.pyramid(im_target, eigth_resolution=True)
@@ -105,16 +44,6 @@ def enable_simsac_gradients(model):
 
 
 def get_change_magnitude(simsac, field_img, ref_img):
-    """
-    Forward pass through SimSAC and return change magnitude per image.
-
-    Args:
-        field_img: [B, C, H, W] in ImageNet-normalised range
-        ref_img:   [B, C, H, W] in ImageNet-normalised range
-
-    Returns:
-        change_mag: [B] per-image mean change magnitude
-    """
     mags = []
     for i in range(field_img.shape[0]):
         f = field_img[i:i+1]
@@ -142,44 +71,14 @@ def get_change_magnitude(simsac, field_img, ref_img):
         mag = torch.sqrt(change[:, 0] ** 2 + change[:, 1] ** 2 + 1e-8).mean()
         mags.append(mag)
 
-    return torch.stack(mags)   # [B]
+    return torch.stack(mags)
 
 
 def change_map_loss(magnitudes, labels):
-    """
-    Direct change map supervision loss.
-
-    Tampered (label=1): want HIGH magnitude → loss = -magnitude
-    Clean    (label=0): want LOW  magnitude → loss = +magnitude
-
-    Formula: loss = (1 - 2*label) * magnitude
-      label=1: (1-2)*mag = -mag  → minimising loss maximises magnitude ✓
-      label=0: (1-0)*mag = +mag  → minimising loss minimises magnitude  ✓
-
-    Args:
-        magnitudes: [B] per-image change magnitude tensor
-        labels:     [B] binary labels (1=tampered, 0=clean), float tensor
-
-    Returns:
-        Scalar loss
-    """
     return ((1.0 - 2.0 * labels) * magnitudes).mean()
 
 
 def l2_reg_loss(model, original_params):
-    """
-    L2 regularisation toward original synthetic.pth weights.
-
-    Prevents catastrophic forgetting: penalises large deviations from
-    the original weight values. This keeps clean-image performance intact.
-
-    Args:
-        model:           Current SimSAC model
-        original_params: Dict {name → tensor} of original synthetic.pth weights
-
-    Returns:
-        Scalar L2 regularisation loss
-    """
     reg = 0.0
     for name, param in model.named_parameters():
         if name in original_params and param.requires_grad:
@@ -192,17 +91,6 @@ def l2_reg_loss(model, original_params):
 # ---------------------------------------------------------------------------
 
 class DirectCMTrainer:
-    """
-    Trains SimSAC backbone directly on change map loss.
-
-    No contrastive loss. No projection head. No temperature.
-    Pure change map supervision + L2 regularisation toward original weights.
-
-    val_loader should be the MIXED val pkl (contrastive_pairs_surface_wb_test)
-    which contains both clean and adversarial pairs. evaluate_separation splits
-    these by the is_adversarial flag so we track both clean_sep and adv_sep from
-    a single loader.
-    """
 
     def __init__(self, simsac, original_params, train_loader, val_loader,
                  config, device):
@@ -224,16 +112,16 @@ class DirectCMTrainer:
         self.optimizer = optim.Adam([
             {'params': pyramid_params, 'lr': config['lr'] * 0.1},
             {'params': other_params,   'lr': config['lr']},
-        ], weight_decay=0.0)   # L2 reg handled explicitly (toward original, not toward 0)
+        ], weight_decay=0.0)
         self.scheduler = ReduceLROnPlateau(
-            self.optimizer, mode='max',   # maximise separation
+            self.optimizer, mode='max',
             factor=0.5, patience=3, min_lr=1e-7
         )
 
         self.history = {
             'train_cm_loss': [],
-            'val_clean_sep': [],     # tampered_mean_cm - clean_mean_cm on non-adv pairs
-            'val_adv_sep': [],       # tampered_mean_cm - clean_mean_cm on adversarial pairs
+            'val_clean_sep': [],
+            'val_adv_sep': [],
             'val_combined': [],
             'learning_rate': []
         }
@@ -287,16 +175,6 @@ class DirectCMTrainer:
 
     @torch.no_grad()
     def evaluate_separation(self, loader):
-        """
-        Compute change map separation on a mixed dataloader, split by is_adv.
-
-        Returns:
-            (clean_sep, clean_t_mean, clean_c_mean): stats on non-adversarial pairs
-            (adv_sep, adv_t_mean, adv_c_mean):       stats on adversarial pairs
-
-        separation = mean_cm(tampered) - mean_cm(clean), higher is better.
-        If no adversarial pairs are found, adv stats fall back to clean stats.
-        """
         self.simsac.eval()
 
         # (is_adv=False/True, label=0/1) → list of magnitudes
@@ -339,15 +217,12 @@ class DirectCMTrainer:
 
         pyr_lr = self.config['lr'] * 0.1
         dec_lr = self.config['lr']
-        print(f"\n{'='*65}")
         print("SimSAC Direct Change Map Fine-tuning  (v2 — pyramid unfrozen)")
-        print(f"{'='*65}")
         print(f"Epochs:           {self.config['epochs']}")
         print(f"LR pyramid:       {pyr_lr:.1e}  (conservative — VGG backbone)")
         print(f"LR decoder:       {dec_lr:.1e}")
         print(f"Lambda reg:       {self.config['lambda_reg']}")
         print(f"Output:           {output_dir}")
-        print(f"{'='*65}")
 
         for epoch in range(self.config['epochs']):
 
@@ -360,7 +235,7 @@ class DirectCMTrainer:
 
             combined = 0.5 * clean_sep + 0.5 * adv_sep
             self.scheduler.step(combined)
-            lr = self.optimizer.param_groups[1]['lr']   # decoder LR (group index 1)
+            lr = self.optimizer.param_groups[1]['lr']
 
             self.history['train_cm_loss'].append(train_loss)
             self.history['val_clean_sep'].append(clean_sep)
@@ -395,16 +270,14 @@ class DirectCMTrainer:
         self._save(self.config['epochs'] - 1, output_dir, 'final.pth')
         self._plot(output_dir)
 
-        print(f"\n{'='*65}")
         print(f"Training Complete!")
         print(f"Best epoch: {self.best_epoch} — combined separation: {self.best_combined:.4f}")
         print(f"Run predict_tampering with: {output_dir}/best.pth")
-        print(f"{'='*65}")
 
     def _save(self, epoch, output_dir, filename):
         ckpt = {
             'epoch': epoch + 1,
-            'state_dict': self.simsac.state_dict(),   # raw SimSAC (no wrapper, TAMPAR-compatible)
+            'state_dict': self.simsac.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_combined': self.best_combined,
             'history': self.history,
@@ -450,18 +323,6 @@ class DirectCMTrainer:
 # ---------------------------------------------------------------------------
 
 def load_simsac(weights_path, device):
-    """
-    Load SimSAC, unfreeze ALL parameters, and apply gradient proxy patch.
-
-    v1 bug: SimSaC_Model(evaluation=True) starts with the VGG pyramid frozen
-    (requires_grad=False, ~7.7M params). The PGD/FGSM attack operates at the
-    pyramid feature level — training only the decoder cannot unlearn the
-    adversarial vulnerability. Result: flat separation (~-0.009) across all epochs.
-
-    Fix: explicitly set requires_grad=True for ALL parameters BEFORE the optimizer
-    is built. Two LR groups in DirectCMTrainer handle the conservative pyramid vs
-    faster decoder update rates.
-    """
     simsac = SimSaC_Model(
         evaluation=True,
         pyramid_type='VGG',
@@ -564,9 +425,7 @@ def main():
         print("CUDA not available, using CPU")
         device = 'cpu'
 
-    print(f"\n{'='*65}")
     print("SimSAC Direct Change Map Fine-tuning  (v2 — pyramid unfrozen)")
-    print(f"{'='*65}")
     print(f"Train pairs:    {args.clean_pairs}")
     print(f"Val pairs:      {args.val_pairs}")
     print(f"Weights:        {args.weights_path}")

@@ -1,55 +1,3 @@
-"""
-SimSAC Laplacian Distillation Fine-tuning  (v2 — fixed)
-
-Key insight from adversarial attack analysis (comparison_results_adv_test_wb_ep_10.csv):
-  - PGD/FGSM attack targeted SimSAC's correlation features specifically
-  - Result: simsac simple_threshold dropped 84% → 70.7% on adversarial test
-  - But: laplacian XGBoost alone = 91.4%, canny XGBoost alone = 86.3%
-  - Edge detectors are completely IMMUNE because the attack never targeted them
-
-Why Laplacian works as a teacher:
-  The PGD attack minimised ||cm_simsac(tampered+δ, ref)||, making SimSAC's
-  pyramid features of (tampered+δ) look identical to features of (ref).
-  But the actual pixel-level UV-map tampering creates REAL geometric differences
-  that Laplacian edge maps still detect clearly through the perturbation.
-
-v1 failure analysis:
-  1. VGG pyramid backbone was FROZEN (requires_grad=False, 7.7M params).
-     Gradient from distillation loss propagated through the graph but hit no
-     trainable parameter → weights never updated → val frozen at epoch-1 numbers.
-  2. Raw VGG feature L2 distance is the WRONG metric: val separation = -1.6302
-     (clean pairs scored higher than tampered). VGG encodes semantic content,
-     not tampering geometry — UV-map changes look semantically identical.
-
-v2 fixes:
-  1. Explicitly unfreeze ALL parameters (pyramid + decoder).
-     Use two LR groups: pyramid at lr×0.1 (conservative), decoder at lr.
-  2. Use enable_simsac_gradients() proxy to get a differentiable CHANGE MAP
-     (not raw feature distance). The proxy gives corr4, which IS the signal
-     predict_tampering uses — gradient flows through it to decoder AND pyramid.
-  3. Apply Laplacian distillation to the proxy change magnitude:
-       loss = MSE(normalise(proxy_mag), normalise(lap_diff).detach())
-     This is better than direct CM loss (direction-only) because Laplacian
-     provides an EXACT per-sample regression target.
-  4. Stronger default lambda_reg (0.5) since pyramid is now trainable too.
-
-Training signal:
-  teacher = Laplacian_spatial_diff(ref, field)        ← fixed kernel, no grad
-  student = proxy_change_magnitude(ref, field)        ← corr4 → grad flows here
-  loss    = MSE(normalise(student), normalise(teacher))
-          + lambda_reg * L2_toward_synthetic.pth
-
-  Adversarial tampered: teacher HIGH, student LOW → gradient pushes student UP
-  Clean non-tampered:   teacher LOW,  student HIGH → gradient pushes student DOWN
-
-Usage:
-    python extension/train_simsac_laplacian_distill.py \\
-        --train_pairs /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/train_pairs_surface_level.pkl \\
-        --val_pairs   /content/drive/MyDrive/TAMPAR_DATA/tampar/contrastive_pairs_surface_wb_test/val_pairs_surface_level.pkl \\
-        --weights_path /content/tampar/src/simsac/weight/synthetic.pth \\
-        --output_dir  /content/drive/MyDrive/TAMPAR_DATA/tampar/simsac_weights_lap_distill \\
-        --lr 1e-5 --lambda_reg 0.5 --epochs 15
-"""
 
 import sys
 import types
@@ -78,14 +26,6 @@ from contrastive_dataset import ContrastivePairsDataset
 # ---------------------------------------------------------------------------
 
 def enable_simsac_gradients(model):
-    """
-    Patch forward_sigle_ref to return a differentiable change map.
-
-    The real SimSAC forward disables gradients internally. This patch replaces
-    it with a simplified proxy that uses coarsest-resolution correlation (corr4)
-    as the change signal. Gradient flows through corr4 back to both the
-    decoder AND the pyramid feature extractor (once unfrozen).
-    """
     def forward_with_grad(self, im_target, im_source,
                           im_target_256, im_source_256, disable_flow=None):
         im1_pyr     = self.pyramid(im_target,     eigth_resolution=True)
@@ -109,21 +49,6 @@ def enable_simsac_gradients(model):
 # ---------------------------------------------------------------------------
 
 def get_proxy_change_magnitude(simsac, img1, img2):
-    """
-    Forward pass through the patched SimSAC and return proxy change magnitude.
-
-    Uses corr4 (coarsest-resolution correlation) as the change signal.
-    Gradient flows through this back to both pyramid AND decoder weights
-    (once all params are unfrozen with requires_grad=True).
-
-    +1e-8 inside sqrt prevents NaN gradient when both channels are near zero.
-
-    Args:
-        img1, img2: [B, C, H, W]  ImageNet-normalised, on device
-
-    Returns:
-        mags: [B]  per-image proxy change magnitude
-    """
     mags = []
     for i in range(img1.shape[0]):
         f = img1[i:i+1]
@@ -150,7 +75,7 @@ def get_proxy_change_magnitude(simsac, img1, img2):
         mag = torch.sqrt(change[:, 0] ** 2 + change[:, 1] ** 2 + 1e-8).mean()
         mags.append(mag)
 
-    return torch.stack(mags)   # [B]
+    return torch.stack(mags)
 
 
 # ---------------------------------------------------------------------------
@@ -159,19 +84,6 @@ def get_proxy_change_magnitude(simsac, img1, img2):
 
 @torch.no_grad()
 def compute_laplacian_diff(img1, img2):
-    """
-    Spatial Laplacian edge difference between two images.
-
-    The adversarial perturbation δ was crafted to fool SimSAC's correlation
-    features only. Real UV-map tampering causes genuine geometric changes
-    that Laplacian detects through δ — making this a reliable teacher signal.
-
-    Args:
-        img1, img2: [B, C, H, W]  ImageNet-normalised
-
-    Returns:
-        diff: [B]  mean squared Laplacian spatial difference per pair
-    """
     C, device, dtype = img1.shape[1], img1.device, img1.dtype
 
     kernel = torch.tensor(
@@ -180,10 +92,10 @@ def compute_laplacian_diff(img1, img2):
          [0.,  1., 0.]], dtype=dtype, device=device
     ).view(1, 1, 3, 3).expand(C, 1, 3, 3).contiguous()
 
-    lap1 = F.conv2d(img1, kernel, padding=1, groups=C)   # [B, C, H, W]
+    lap1 = F.conv2d(img1, kernel, padding=1, groups=C)
     lap2 = F.conv2d(img2, kernel, padding=1, groups=C)
 
-    return (lap1 - lap2).pow(2).mean(dim=[1, 2, 3])       # [B]
+    return (lap1 - lap2).pow(2).mean(dim=[1, 2, 3])
 
 
 # ---------------------------------------------------------------------------
@@ -191,22 +103,6 @@ def compute_laplacian_diff(img1, img2):
 # ---------------------------------------------------------------------------
 
 def distillation_loss(student, teacher):
-    """
-    MSE between batch-normalised proxy change magnitude and Laplacian diff.
-
-    Batch min-max normalisation removes scale mismatch between the two
-    distance spaces while preserving relative ordering and magnitudes.
-
-    Gradient effect:
-      If student(adv_tampered) << teacher(adv_tampered):
-        gradient pushes student UP → proxy change map grows → more discriminative
-      If student(clean) >> teacher(clean):
-        gradient pushes student DOWN → fewer false positives
-
-    Args:
-        student: [B]  proxy change magnitudes (requires grad)
-        teacher: [B]  Laplacian diffs (detached, no grad)
-    """
     target = teacher.detach().float()
     pred   = student.float()
 
@@ -223,12 +119,6 @@ def distillation_loss(student, teacher):
 
 
 def l2_reg_loss(model, original_params):
-    """
-    L2 regularisation toward original synthetic.pth weights.
-
-    Applied to ALL parameters (pyramid + decoder) since both are now
-    trainable. Prevents catastrophic forgetting of clean-image performance.
-    """
     reg = 0.0
     for name, param in model.named_parameters():
         if name in original_params and param.requires_grad:
@@ -242,7 +132,6 @@ def l2_reg_loss(model, original_params):
 
 @torch.no_grad()
 def collect_val_stats(simsac, loader, device):
-    """Run proxy change magnitude over entire val set, split by is_adv."""
     simsac.eval()
     all_mags, all_labels, all_is_adv = [], [], []
 
@@ -262,10 +151,6 @@ def collect_val_stats(simsac, loader, device):
 
 
 def best_threshold_accuracy(mags, labels):
-    """
-    Sweep thresholds and return (best_accuracy, best_threshold).
-    Prediction: tampered if mag > threshold  (higher mag → more change → tampered).
-    """
     thresholds = np.percentile(mags, np.linspace(0, 100, 200))
     best_acc, best_t = 0.0, thresholds[0]
     for t in thresholds:
@@ -277,7 +162,6 @@ def best_threshold_accuracy(mags, labels):
 
 
 def change_map_separation(mags, labels):
-    """mean_mag(tampered) − mean_mag(clean). Positive = model is discriminative."""
     t = mags[labels == 1]
     c = mags[labels == 0]
     if len(t) == 0 or len(c) == 0:
@@ -290,18 +174,6 @@ def change_map_separation(mags, labels):
 # ---------------------------------------------------------------------------
 
 class LapDistillTrainer:
-    """
-    Fine-tunes SimSAC (all layers unfrozen) using Laplacian distillation.
-
-    Loss = distillation_loss(proxy_change_mag, laplacian_diff.detach())
-         + lambda_reg * l2_reg_loss(all_params, original_synthetic_params)
-
-    Pyramid uses lr×0.1 (conservative — VGG weights are well-trained).
-    Decoder uses lr (faster adaptation).
-
-    Validation metric: threshold accuracy on proxy change magnitudes,
-    reported separately for clean and adversarial pairs.
-    """
 
     def __init__(self, simsac, original_params, train_loader, val_loader,
                  config, device):
@@ -356,10 +228,10 @@ class LapDistillTrainer:
             self.optimizer.zero_grad()
 
             # Teacher: Laplacian spatial edge difference — fixed, no grad
-            lap_diff  = compute_laplacian_diff(img1, img2)          # [B]
+            lap_diff  = compute_laplacian_diff(img1, img2)
 
             # Student: proxy change magnitude through patched SimSAC forward
-            proxy_mag = get_proxy_change_magnitude(self.simsac, img1, img2)  # [B]
+            proxy_mag = get_proxy_change_magnitude(self.simsac, img1, img2)
 
             # Laplacian distillation: student → match teacher (batch-normalised)
             loss_distill = distillation_loss(proxy_mag, lap_diff)
@@ -424,16 +296,13 @@ class LapDistillTrainer:
         pyr_lr = self.config['lr'] * 0.1
         dec_lr = self.config['lr']
 
-        print(f"\n{'='*65}")
         print("SimSAC Laplacian Distillation Fine-tuning  (v2)")
-        print(f"{'='*65}")
         print(f"Epochs:           {self.config['epochs']}")
         print(f"LR pyramid:       {pyr_lr:.1e}  (conservative — VGG backbone)")
         print(f"LR decoder:       {dec_lr:.1e}")
         print(f"Lambda reg:       {self.config['lambda_reg']}")
         print(f"Baselines:        clean=84.0%  |  adversarial=70.7%")
         print(f"Output:           {output_dir}")
-        print(f"{'='*65}\n")
 
         for epoch in range(self.config['epochs']):
 
@@ -476,7 +345,6 @@ class LapDistillTrainer:
         self._save(self.config['epochs'] - 1, output_dir, 'final.pth')
         self._plot(output_dir)
 
-        print(f"\n{'='*65}")
         print(f"Training complete!")
         print(f"Best epoch:        {self.best_epoch}")
         print(f"Best combined acc: {self.best_combined:.4f}")
@@ -484,7 +352,6 @@ class LapDistillTrainer:
         print(f"  python src/tools/compute_similarity_scores.py \\")
         print(f"    --checkpoint {output_dir}/best.pth")
         print(f"  Then compare simsac simple_threshold to baseline 70.7%")
-        print(f"{'='*65}")
 
     # ------------------------------------------------------------------
     def _save(self, epoch, output_dir, filename):
@@ -551,16 +418,6 @@ class LapDistillTrainer:
 # ---------------------------------------------------------------------------
 
 def load_simsac(weights_path, device):
-    """
-    Load SimSAC, unfreeze ALL parameters, and apply gradient proxy patch.
-
-    v1 bug: pyramid was frozen (requires_grad=False). Gradient from
-    distillation loss reached no trainable param → weights never updated.
-
-    Fix: explicitly set requires_grad=True for every parameter BEFORE
-    storing original_params, then patch forward_sigle_ref for differentiable
-    proxy change map computation.
-    """
     simsac = SimSaC_Model(
         evaluation=True,
         pyramid_type='VGG',
@@ -650,9 +507,7 @@ def main():
         print("CUDA not available, using CPU")
         device = 'cpu'
 
-    print(f"\n{'='*65}")
     print("SimSAC Laplacian Distillation Fine-tuning  (v2)")
-    print(f"{'='*65}")
     print(f"Train pairs:  {args.train_pairs}")
     print(f"Val pairs:    {args.val_pairs}")
     print(f"Weights:      {args.weights_path}")

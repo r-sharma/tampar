@@ -1,30 +1,3 @@
-"""
-Visualize how different comparison methods see clean vs adversarial UV maps.
-
-This script shows the change detection outputs for:
-1. Reference UV map (from uvmaps folder)
-2. Clean field UV map (uvmap_gt)
-3. Adversarial field UV map (uvmap_gt with perturbations)
-
-Supported comparison methods:
-- simsac: SimSAC neural change detection
-- canny: Canny edge detection
-- laplacian: Laplacian edge detection
-
-For each parcel surface, it shows:
-- Original RGB images (Reference, Clean, Adversarial)
-- Change/edge maps (R, C, A) in grayscale
-
-Usage:
-    python visualize_simsac_comparison.py \
-        --reference_dir /path/to/uvmaps \
-        --clean_dir /path/to/validation \
-        --adversarial_dir /path/to/adversarial_validation \
-        --parcel_id 1 \
-        --background carpet \
-        --method simsac \
-        --output_dir /path/to/output
-"""
 
 import sys
 from pathlib import Path
@@ -44,21 +17,6 @@ from src.tampering.compare import compare_canny, compare_laplacian
 
 
 def process_simsac_output(im1, im2, threshold=200, ckpt_path=None):
-    """
-    Process two images through SimSAC and return change maps.
-
-    This replicates what compare_simsac() does in src/tampering/compare.py
-
-    Args:
-        im1: Reference image
-        im2: Comparison image (clean or adversarial)
-        threshold: Threshold for binary visualization (default 200, range 0-255)
-        ckpt_path: Path to SimSAC checkpoint file (optional, uses default if None)
-
-    Returns:
-        change1_raw: Raw change map 1 (grayscale 0-255)
-        change1_thresh: Thresholded change map 1 (binary 0 or 255)
-    """
     simsac = SimSaC.get_instance(ckpt_path=ckpt_path)
     imgs = simsac.inference(im1.astype(np.uint8), im2.astype(np.uint8))
 
@@ -80,18 +38,6 @@ def process_simsac_output(im1, im2, threshold=200, ckpt_path=None):
 
 
 def process_canny_output(im1, im2, threshold=200):
-    """
-    Process two images through Canny edge detection.
-
-    Args:
-        im1: Reference image
-        im2: Comparison image (clean or adversarial)
-        threshold: Threshold for binary visualization (default 200, range 0-255)
-
-    Returns:
-        edges_gray: Edge map for im2 (grayscale 0-255)
-        edges_thresh: Thresholded edge map for im2 (binary 0 or 255)
-    """
     # Use compare_canny from src/tampering/compare.py
     # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_canny(im1, im2)
@@ -108,18 +54,6 @@ def process_canny_output(im1, im2, threshold=200):
 
 
 def process_laplacian_output(im1, im2, threshold=200):
-    """
-    Process two images through Laplacian edge detection.
-
-    Args:
-        im1: Reference image
-        im2: Comparison image (clean or adversarial)
-        threshold: Threshold for binary visualization (default 200, range 0-255)
-
-    Returns:
-        edges_gray: Edge map for im2 (grayscale 0-255)
-        edges_thresh: Thresholded edge map for im2 (binary 0 or 255)
-    """
     # Use compare_laplacian from src/tampering/compare.py
     # Returns list of 2 RGB edge maps: [edges1, edges2]
     edge_maps = compare_laplacian(im1, im2)
@@ -144,24 +78,6 @@ def visualize_parcel_comparison(
     method='simsac',
     simsac_ckpt_path=None
 ):
-    """
-    Visualize comparison for all surfaces of a parcel using specified method.
-
-    Args:
-        reference_path: Path to reference UV map
-        clean_path: Path to clean field UV map
-        adversarial_path: Path to adversarial field UV map
-        output_path: Path to save output visualization
-        threshold: Not used (kept for backward compatibility)
-        method: Comparison method ('simsac', 'canny', or 'laplacian')
-        simsac_ckpt_path: Path to SimSAC checkpoint file (optional, only used with simsac method)
-
-    Shows 6 columns for each surface:
-    - Columns 1-3: Original RGB images (Reference, Clean, Adversarial)
-    - Columns 4-6: Change/edge maps (R, C, A) - grayscale 0-255
-
-    For each surface patch (top, left, center, right, bottom).
-    """
     # Load images
     reference = cv2.imread(str(reference_path))
     reference = cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)

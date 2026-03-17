@@ -1,29 +1,3 @@
-"""
-Generate SimSAC-Targeted Adversarial UV Maps
-
-Creates adversarial perturbations that specifically target SimSAC's optical flow
-correspondence matching, making them much more effective than generic attacks.
-
-Usage:
-    # SimSAC-targeted FGSM attack on carpet and table folders only
-    python generate_adversarial_simsac_targeted.py \
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \
-        --uvmaps_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/uvmaps \
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/adversarial_validation_simsac \
-        --attack fgsm \
-        --folders carpet table \
-        --epsilon 0.1
-
-    # SimSAC-targeted PGD attack, all folders except base
-    python generate_adversarial_simsac_targeted.py \
-        --data_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/validation \
-        --uvmaps_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/uvmaps \
-        --output_dir /content/drive/MyDrive/TAMPAR_DATA/tampar/adversarial_validation_simsac \
-        --attack pgd \
-        --exclude_folders base \
-        --epsilon 0.1 \
-        --pgd_steps 20
-"""
 
 import os
 import sys
@@ -47,17 +21,8 @@ from src.simsac.models.our_models.SimSaC import SimSaC_Model
 
 
 class SimSaCTargetedAttackGenerator:
-    """Generate adversarial perturbations targeting SimSAC correspondence matching."""
 
     def __init__(self, simsac_model, epsilon=0.1, device='cuda'):
-        """
-        Initialize SimSAC-targeted adversarial generator.
-
-        Args:
-            simsac_model: Loaded SimSAC model
-            epsilon: Maximum perturbation magnitude (L-infinity norm)
-            device: Device to use
-        """
         self.simsac = simsac_model
         # Keep in train mode to allow gradients to flow
         # SimSAC has internal no_grad() in eval mode which blocks gradients
@@ -66,16 +31,6 @@ class SimSaCTargetedAttackGenerator:
         self.device = device
 
     def simsac_change_loss(self, field_img, reference_img):
-        """
-        Compute loss based on SimSAC change/correlation output.
-
-        The tampering detector uses the CHANGE map (correspondence confidence),
-        not the optical flow! We need to minimize the change output to make
-        tampered images look clean to the detector.
-
-        Lower change = Good correspondence = Detector thinks "clean"
-        Higher change = Poor correspondence = Detector thinks "tampered"
-        """
         # Resize to required resolutions
         field_512 = F.interpolate(field_img, size=(512, 512), mode='bilinear', align_corners=False)
         reference_512 = F.interpolate(reference_img, size=(512, 512), mode='bilinear', align_corners=False)
@@ -129,18 +84,8 @@ class SimSaCTargetedAttackGenerator:
         return loss
 
     def fgsm_attack_simsac(self, field_img, reference_img):
-        """
-        FGSM attack targeting SimSAC optical flow.
-
-        Args:
-            field_img: Field image tensor [1, C, H, W]
-            reference_img: Reference UV map tensor [1, C, H, W]
-
-        Returns:
-            Adversarial field image
-        """
         field_img = field_img.clone().detach()
-        reference_img = reference_img.clone().detach()  # Ensure no grad
+        reference_img = reference_img.clone().detach()
         field_img.requires_grad = True
 
         # Compute SimSAC change loss (targets the change map, not flow!)
@@ -166,18 +111,6 @@ class SimSaCTargetedAttackGenerator:
         return adv_field
 
     def pgd_attack_simsac(self, field_img, reference_img, steps=10, step_size=None):
-        """
-        PGD attack targeting SimSAC change/correlation output.
-
-        Args:
-            field_img: Field image tensor [1, C, H, W]
-            reference_img: Reference UV map tensor [1, C, H, W]
-            steps: Number of PGD iterations
-            step_size: Step size per iteration
-
-        Returns:
-            Adversarial field image
-        """
         if step_size is None:
             step_size = self.epsilon / 4
 
@@ -206,18 +139,6 @@ class SimSaCTargetedAttackGenerator:
         return adv_field
 
     def generate_adversarial_uvmap(self, field_path, reference_path, attack_type='fgsm', pgd_steps=10):
-        """
-        Generate adversarial version of field UV map targeting SimSAC.
-
-        Args:
-            field_path: Path to field UV map
-            reference_path: Path to reference UV map
-            attack_type: 'fgsm' or 'pgd'
-            pgd_steps: Number of PGD steps
-
-        Returns:
-            Adversarial UV map as numpy array
-        """
         # Load images
         field_img = Image.open(field_path).convert('RGB')
         reference_img = Image.open(reference_path).convert('RGB')
@@ -247,11 +168,10 @@ class SimSaCTargetedAttackGenerator:
 
 
 def load_simsac_model(checkpoint_path, device='cuda'):
-    """Load pre-trained SimSAC model and enable gradient flow."""
     print(f"Loading SimSAC model from {checkpoint_path}...")
 
     model = SimSaC_Model(
-        evaluation=False,  # Set to False to enable gradients
+        evaluation=False,
         pyramid_type='VGG',
         md=4,
         cyclic_consistency=True,
@@ -268,7 +188,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
     else:
         model.load_state_dict(checkpoint)
 
-    model.train()  # Keep in train mode
+    model.train()
 
     # CRITICAL FIX: Monkey-patch to remove no_grad() wrapper
     # SimSAC has hardcoded torch.no_grad() in forward_sigle_ref which blocks gradients
@@ -280,7 +200,6 @@ def load_simsac_model(checkpoint_path, device='cuda'):
 
     # Create wrapper that skips no_grad
     def forward_with_grad(self, im_target, im_source, im_target_256, im_source_256, disable_flow=None):
-        """Modified forward that allows gradients to flow."""
         # This is a simplified version - we'll extract features WITH gradients
         b, _, h_full, w_full = im_target.size()
 
@@ -306,7 +225,7 @@ def load_simsac_model(checkpoint_path, device='cuda'):
 
         # Return in training mode format
         return {
-            "flow": ([flow4], [flow4]),  # Simplified - just return coarsest flow
+            "flow": ([flow4], [flow4]),
             "change": ([corr4], [corr4])
         }
 
@@ -320,20 +239,10 @@ def load_simsac_model(checkpoint_path, device='cuda'):
 
 
 def find_reference_uvmap(field_uvmap_path, uvmaps_dir):
-    """
-    Find corresponding reference UV map for a field image.
-
-    Args:
-        field_uvmap_path: Path to field UV map (e.g., id_05_20230516_142710_uvmap_gt.png)
-        uvmaps_dir: Directory containing reference UV maps
-
-    Returns:
-        Path to reference UV map (e.g., id_05_uvmap.png)
-    """
     # Extract parcel ID from filename
     filename = field_uvmap_path.name
     # Format: id_XX_YYYYMMDD_HHMMSS_uvmap_gt.png
-    parcel_id = filename.split('_')[1]  # Get XX
+    parcel_id = filename.split('_')[1]
 
     # Reference format: id_XX_uvmap.png
     reference_name = f"id_{parcel_id}_uvmap.png"
@@ -353,29 +262,12 @@ def find_reference_uvmap(field_uvmap_path, uvmaps_dir):
 def generate_adversarial_dataset(data_dir, uvmaps_dir, output_dir, simsac_checkpoint,
                                  attack_type='fgsm', folders=None, exclude_folders=None,
                                  uvmap_types=['gt'], epsilon=0.1, pgd_steps=10):
-    """
-    Generate SimSAC-targeted adversarial UV maps.
-
-    Args:
-        data_dir: Input validation directory
-        uvmaps_dir: Directory with reference UV maps
-        output_dir: Output directory for adversarial data
-        simsac_checkpoint: Path to SimSAC checkpoint
-        attack_type: 'fgsm', 'pgd', or 'both'
-        folders: List of folder names to include (e.g., ['carpet', 'table'])
-        exclude_folders: List of folder names to exclude (e.g., ['base'])
-        uvmap_types: List of UV map types ('gt', 'pred')
-        epsilon: Perturbation magnitude
-        pgd_steps: Number of PGD iterations
-    """
     data_dir = Path(data_dir)
     uvmaps_dir = Path(uvmaps_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n{'='*70}")
     print("SimSAC-Targeted Adversarial UV Map Generation")
-    print(f"{'='*70}")
     print(f"Input directory:     {data_dir}")
     print(f"Reference UV maps:   {uvmaps_dir}")
     print(f"Output directory:    {output_dir}")
@@ -457,9 +349,7 @@ def generate_adversarial_dataset(data_dir, uvmaps_dir, output_dir, simsac_checkp
                 except Exception as e:
                     print(f"    Error processing {field_path.name}: {e}")
 
-    print(f"\n{'='*70}")
     print("✓ SimSAC-targeted adversarial generation complete!")
-    print(f"{'='*70}")
     print(f"Total adversarial UV maps generated: {total_uvmaps}")
 
 

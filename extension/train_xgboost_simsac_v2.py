@@ -1,61 +1,3 @@
-"""
-train_xgboost_simsac_v2.py — Improved XGBoost on SimSAC features
-=================================================================
-
-Results on adversarial white-box test set (wb_ep_10):
-  Baseline  (XGBoost 100 trees, 5 raw features)  : 81.66%   ← from comparison_results CSV
-  v2 same   (XGBoost 100 trees, 44 features)     : ~89.2%
-  v2 tuned  (XGBoost 600 trees, 44 features)     : ~91.8%
-
-Target: >85%  ✓ reached
-
-Key improvements over the 81.66% baseline
-------------------------------------------
-
-  1. CW-SSIM engineering
-     cwssim saturates at 1e6 (75%+ of values are 500k or 1M — effectively ordinal).
-     Raw cwssim has very low discriminative power for a tree boundary.
-     → log1p transform + saturation indicator flags.
-
-  2. Composite + interaction features
-     Single metrics can be suppressed by the white-box attack.
-     Products/ratios combine metrics in ways the attacker did not account for.
-       tam_score  = (1−msssim) × (1−ssim) × mae   (all three tampered signals together)
-       high_sim   = msssim × ssim                   (both structural metrics agree clean)
-       mae_x_hog  = mae × hog                       (both error metrics combined)
-       mae_per_ssim, hog_per_ssim                   (normalised error ratios)
-
-  3. Parcel-view context features  ← biggest lever
-     Each (parcel_id, view) always contains exactly 3 surfaces.
-     Groups contain a mix of tampered/clean surfaces
-       (2T+1C, 1T+2C, 3T groups — never all-clean in the adversarial set).
-     For any surface, knowing how its metrics compare to its 2 neighbours
-     strongly identifies it: a tampered surface is the low-SSIM / high-MAE
-     outlier within its group.
-     → group mean/std/min/max + per-surface delta + within-group rank.
-
-  4. Tuned XGBoost hyperparameters
-
-Evaluation methodology
-----------------------
-Matches the existing comparison_results methodology:
-  train on ALL adversarial simsac rows → evaluate on SAME rows (training accuracy).
-
-For a fair generalization estimate, CV accuracy is also reported separately.
-
-Usage
------
-  # Primary comparison (matches comparison_results CSV methodology):
-  python extension/train_xgboost_simsac_v2.py \\
-      --csv /path/to/simscores_adversarial_simsac_test_wb_ep_10.csv \\
-      --output_csv results_simsac_v2.csv
-
-  # Also mix in clean data for adversarial-training variant:
-  python extension/train_xgboost_simsac_v2.py \\
-      --csv /path/to/simscores_adversarial_simsac_test_wb_ep_10.csv \\
-      --clean_csv /path/to/simscores_test_clean_original_with_synthetic_pth.csv \\
-      --output_csv results_simsac_v2_adv_train.csv
-"""
 
 import argparse
 import warnings
@@ -76,7 +18,7 @@ warnings.filterwarnings('ignore')
 # ---------------------------------------------------------------------------
 
 BASE_METRICS    = ['msssim', 'cwssim', 'ssim', 'hog', 'mae']
-CONTEXT_METRICS = ['msssim', 'ssim', 'hog', 'mae', 'log_cwssim']   # log-cwssim, not raw
+CONTEXT_METRICS = ['msssim', 'ssim', 'hog', 'mae', 'log_cwssim']
 
 # XGBoost params matching predictor.py baseline (for a fair features-only comparison)
 BASELINE_PARAMS = dict(n_estimators=100, max_depth=5, learning_rate=0.1,
@@ -94,18 +36,6 @@ TUNED_PARAMS    = dict(n_estimators=600, max_depth=5, learning_rate=0.05,
 # ---------------------------------------------------------------------------
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build ~44 features from the 5 raw SimSAC metrics.
-
-    Pipeline
-    --------
-    1. Keep raw msssim, ssim, hog, mae as-is.
-    2. CW-SSIM transforms (3 features): log1p, saturation flags.
-    3. Composite / ratio features (7 features).
-    4. Parcel-view context features (6 stats × 5 metrics = 30 features).
-
-    No label leakage — all context features use only metric values.
-    """
     df = df.copy()
 
     # ── 1. CW-SSIM transforms ────────────────────────────────────────────────
@@ -141,12 +71,8 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_feature_columns(df: pd.DataFrame) -> list:
-    """
-    Return feature columns — keeps raw msssim/ssim/hog/mae,
-    drops raw cwssim (replaced by log_cwssim + flags), drops all meta columns.
-    """
     meta = {
-        'cwssim',  # replaced by log_cwssim + cwssim_saturated + cwssim_mid
+        'cwssim',
         'Unnamed: 0', 'dataset_split', 'parcel_id', 'view',
         'gt_keypoints', 'compare_type', 'sideface_name',
         'background', 'tampering', 'tampered',
@@ -172,16 +98,6 @@ def evaluate(model, X: np.ndarray, y: np.ndarray) -> dict:
 
 def evaluate_cv(df_raw: pd.DataFrame, params: dict, feat_cols: list,
                 n_splits: int = 5) -> dict:
-    """
-    Group-aware K-fold CV: keeps all surfaces of the same (parcel_id, view)
-    together in the same fold, so context features are always computed from
-    a complete group — no leakage between train and test.
-
-    For each fold:
-      1. Split GROUP keys (parcel_id, view) into train/test
-      2. Re-engineer features using ONLY rows in each split
-      3. Fit on train, evaluate on test
-    """
     from sklearn.model_selection import GroupKFold
 
     # Group key per row
@@ -290,12 +206,10 @@ def main():
     # Raw features for baseline replication
     X_raw = df_adv[BASE_METRICS].values.astype(float)
 
-    BASELINE_ACC = 0.8166     # from comparison_results_adv_test_wb_ep_10.csv
+    BASELINE_ACC = 0.8166
 
-    print(f"\n{'='*62}")
     print("EVALUATION METHOD: train on full dataset → evaluate on same")
     print("(matches existing comparison_results CSV methodology)")
-    print(f"{'='*62}")
 
     # ── Baseline replication ──────────────────────────────────────────────────
     m_base = XGBClassifier(**BASELINE_PARAMS)
@@ -318,10 +232,8 @@ def main():
     # ── CV experiment (group-aware, fair generalization estimate) ─────────────
     # Group-aware CV keeps all surfaces of same (parcel_id, view) in the same fold.
     # Context features are re-computed within each fold so there is no leakage.
-    print(f"\n{'='*62}")
     print(f"CROSS-VALIDATION ({args.n_splits}-fold group-aware) — generalization estimate")
     print(f"  Groups: unique (parcel_id, view) pairs kept together in each fold")
-    print(f"{'='*62}")
 
     # Baseline CV uses raw features (no context), so simple GroupKFold suffices
     from sklearn.model_selection import GroupKFold
@@ -346,9 +258,7 @@ def main():
     # ── Adversarial training (optional) ──────────────────────────────────────
     r_adv_train = None
     if args.clean_csv:
-        print(f"\n{'='*62}")
         print("ADVERSARIAL TRAINING — train on clean+adv, test on adv")
-        print(f"{'='*62}")
         df_clean = load_simsac(args.clean_csv)
         df_clean_fe = engineer_features(df_clean)
         # Recompute context features on the combined set for consistency
@@ -366,7 +276,6 @@ def main():
         print_results("v2 adversarial training (test on adv portion)", r_adv_train, BASELINE_ACC)
 
     # ── Feature importance ────────────────────────────────────────────────────
-    print(f"\n{'='*62}")
     print("TOP-15 FEATURE IMPORTANCE (tuned model, full-data fit):")
     imp = dict(zip(feat_cols, m_tuned.feature_importances_))
     for feat, score in sorted(imp.items(), key=lambda x: -x[1])[:15]:
@@ -389,14 +298,12 @@ def main():
     print(f"\n✓ Results saved → {args.output_csv}")
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    print(f"\n{'='*62}")
     print("SUMMARY (accuracy, matching comparison_results methodology):")
     print(f"  Existing baseline (comparison_results CSV): 81.66%")
     print(f"  v2 same params   (44 feat, 100 trees)    : {r_same['accuracy']*100:.2f}%")
     print(f"  v2 tuned         (44 feat, 600 trees)    : {r_tuned['accuracy']*100:.2f}%")
     if r_adv_train:
         print(f"  v2 adv training  (44 feat, tuned)        : {r_adv_train['accuracy']*100:.2f}%")
-    print(f"{'='*62}")
 
 
 def _row(predictor, metrics):

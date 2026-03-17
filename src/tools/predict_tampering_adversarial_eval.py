@@ -1,32 +1,3 @@
-"""
-Adversarial Evaluation for Tampering Detection
-
-Evaluates tampering predictor robustness against adversarial attacks.
-Trains on clean validation data, tests on adversarial validation data.
-
-Usage:
-    # Compare all classifiers
-    python src/tools/predict_tampering_adversarial_eval.py \
-        --clean_csv /content/drive/MyDrive/TAMPAR_DATA/simscores_validation_clean.csv \
-        --adversarial_csv /content/drive/MyDrive/TAMPAR_DATA/simscores_validation_adversarial.csv \
-        --predictor_type all \
-        --output_csv adversarial_evaluation_results.csv
-
-    # Test specific classifier
-    python src/tools/predict_tampering_adversarial_eval.py \
-        --clean_csv /path/to/clean.csv \
-        --adversarial_csv /path/to/adversarial.csv \
-        --predictor_type xgboost \
-        --output_csv xgboost_adversarial_results.csv
-
-    # Exclude base folder (recommended)
-    python src/tools/predict_tampering_adversarial_eval.py \
-        --clean_csv /path/to/clean.csv \
-        --adversarial_csv /path/to/adversarial.csv \
-        --predictor_type all \
-        --exclude_base \
-        --output_csv results.csv
-"""
 
 import sys
 from pathlib import Path
@@ -71,7 +42,7 @@ def create_pivot(df: pd.DataFrame) -> pd.DataFrame:
         index="id",
         columns="compare_type",
         values=METRICS,
-        aggfunc='first',  # Use first value instead of joining with comma
+        aggfunc='first',
     )
     df_pivot.columns = [
         "score_{}_{}".format(col, method) for col, method in df_pivot.columns
@@ -89,7 +60,6 @@ def create_pivot(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_data(df_input: pd.DataFrame, gt_keypoints: bool = False):
-    """Get data split by gt_keypoints."""
     if gt_keypoints:
         data = df_input[df_input["gt_keypoints"] == True]
     else:
@@ -103,29 +73,15 @@ def train_and_evaluate_predictor(
     gt_keypoints: bool = False,
     predictor_type: str = "simple_threshold",
 ) -> pd.DataFrame:
-    """
-    Train predictor on clean data, evaluate on adversarial data.
-
-    Args:
-        df_train: Clean training data
-        df_test: Adversarial test data
-        gt_keypoints: Whether to use ground truth keypoints
-        predictor_type: Type of predictor
-
-    Returns:
-        DataFrame with evaluation results
-    """
     SCORES = [n for n in df_train.columns if n.startswith("score")]
 
     # Get clean train and adversarial test data
     data_train = get_data(df_train, gt_keypoints=gt_keypoints)
     data_test = get_data(df_test, gt_keypoints=gt_keypoints)
 
-    print(f"\n{'='*60}")
     print(f"Training on CLEAN data: {len(data_train)} samples")
     print(f"Testing on ADVERSARIAL data: {len(data_test)} samples")
     print(f"GT Keypoints: {gt_keypoints}")
-    print(f"{'='*60}\n")
 
     results_performance = []
     for compare_types in [[t] for t in CompareType.SELECTION()] + [
@@ -283,9 +239,7 @@ def main():
     # Run each predictor and collect results
     all_results = []
     for predictor_type in predictor_types:
-        print(f"\n{'='*70}")
         print(f"Training with predictor: {predictor_type.upper()}")
-        print(f"{'='*70}")
 
         try:
             df_results = train_and_evaluate_predictor(
@@ -309,13 +263,12 @@ def main():
 
         print("\n" + "="*70)
         print("CLASSIFIER COMPARISON SUMMARY")
-        print("="*70)
 
         # Show best results for each classifier
         agg_dict = {
             'train_accuracy': 'max',
             'test_accuracy': 'max',
-            'accuracy_drop': 'min'  # Lower is better (smaller drop is better)
+            'accuracy_drop': 'min'
         }
 
         # Add optional metrics if they exist
@@ -333,7 +286,6 @@ def main():
 
         print("\n" + "="*70)
         print("BEST PERFORMING METHODS (by test accuracy)")
-        print("="*70)
         df_sorted = df_combined.sort_values('test_accuracy', ascending=False)
         print(df_sorted[['predictor', 'compare_types', 'train_accuracy', 'test_accuracy', 'accuracy_drop']].head(10).to_string(index=False))
         print("\nDone!")

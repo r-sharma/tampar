@@ -1,17 +1,3 @@
-"""
-Visualize Similarity Distribution for Multi-Task Model
-
-Creates histograms showing similarity distribution for:
-- Positive pairs (anchor vs positive - should be HIGH similarity)
-- Negative pairs (anchor vs negative - should be LOW similarity)
-
-Usage:
-    python extension/visualize_similarity_distribution.py \
-        --checkpoint /content/outputs/multitask_training/best_model.pth \
-        --test_pairs /content/tampar/data/tampering_pairs/gt/tampering_triplets.csv \
-        --output_dir /content/outputs/visualizations \
-        --batch_size 32
-"""
 
 import os
 import sys
@@ -38,7 +24,6 @@ from extension.simsac_multitask_model import create_multitask_model
 
 
 class TripletDataset(Dataset):
-    """Dataset for loading triplet pairs."""
 
     def __init__(self, triplet_csv, img_size=512):
         self.df = pd.read_csv(triplet_csv)
@@ -90,14 +75,6 @@ class TripletDataset(Dataset):
 
 
 def compute_similarities(model, dataloader, device):
-    """
-    Compute cosine similarities for all pairs.
-
-    Returns:
-        positive_similarities: List of similarities for positive pairs
-        negative_similarities: List of similarities for negative pairs
-        negative_labels: Tampering labels for negative pairs
-    """
     model.eval()
 
     positive_similarities = []
@@ -129,7 +106,7 @@ def compute_similarities(model, dataloader, device):
             for i in range(batch_size):
                 pos_sim = F.cosine_similarity(
                     anchor_pos_emb[i:i+1],
-                    anchor_pos_emb[i:i+1],  # Same embedding (anchor-positive pair)
+                    anchor_pos_emb[i:i+1],
                     dim=1
                 ).item()
                 positive_similarities.append(pos_sim)
@@ -137,8 +114,8 @@ def compute_similarities(model, dataloader, device):
             # For negative pairs (should be low similarity)
             for i in range(batch_size):
                 neg_sim = F.cosine_similarity(
-                    anchor_pos_emb[i:i+1],  # Anchor embedding
-                    anchor_neg_emb[i:i+1],   # Negative embedding
+                    anchor_pos_emb[i:i+1],
+                    anchor_neg_emb[i:i+1],
                     dim=1
                 ).item()
                 negative_similarities.append(neg_sim)
@@ -152,15 +129,6 @@ def compute_similarities(model, dataloader, device):
 
 
 def plot_similarity_distribution(pos_sim, neg_sim, neg_labels, output_path):
-    """
-    Plot similarity distribution histograms.
-
-    Args:
-        pos_sim: Positive pair similarities
-        neg_sim: Negative pair similarities
-        neg_labels: Tampering labels for negative pairs
-        output_path: Where to save plot
-    """
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
     # 1. Overall distribution
@@ -236,9 +204,7 @@ def plot_similarity_distribution(pos_sim, neg_sim, neg_labels, output_path):
     print(f"\n✓ Saved similarity distribution plot to {output_path}")
 
     # Print summary
-    print(f"\n{'='*70}")
     print("SIMILARITY SUMMARY")
-    print(f"{'='*70}")
     print(f"Positive pairs (Clean vs Clean): {pos_sim.mean():.4f} ± {pos_sim.std():.4f}")
     print(f"Negative pairs (Clean vs Tampered): {neg_sim.mean():.4f} ± {neg_sim.std():.4f}")
     print(f"Separation gap: {pos_sim.mean() - neg_sim.mean():.4f}")
@@ -320,9 +286,7 @@ def main():
         json.dump(results, f, indent=2)
     print(f"✓ Saved raw data to {json_path}")
 
-    print(f"\n{'='*70}")
     print("✓ Visualization complete!")
-    print(f"{'='*70}")
 
 
 if __name__ == "__main__":
