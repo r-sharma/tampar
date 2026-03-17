@@ -453,7 +453,7 @@ def build_figure(selected, importances, output_path,
     fig.legend(handles=legend_handles, loc='lower center', ncol=3,
                fontsize=8.5, framealpha=0.9, bbox_to_anchor=(0.5, 0.0))
 
-    plt.savefig(output_path, dpi=150, bbox_inches='tight',
+    plt.savefig(output_path, dpi=200, bbox_inches='tight',
                 facecolor=fig.get_facecolor())
     print(f"\n Figure saved  {output_path}")
     return fig

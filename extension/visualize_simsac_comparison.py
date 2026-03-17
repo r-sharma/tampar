@@ -178,7 +178,7 @@ def visualize_parcel_comparison(
         plt.axis('off')
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=200, bbox_inches='tight')
     plt.close()
 
     print(f" Saved visualization: {output_path}")

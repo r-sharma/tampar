@@ -225,7 +225,7 @@ def visualize_embeddings(pairs_file, checkpoint_path=None, output_path='embeddin
         print(f"\nSeparation: {abs(neg_dist.mean() - pos_dist.mean()):.3f}")
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=200, bbox_inches='tight')
     print(f"\n Saved visualization: {output_path}")
 
 
