@@ -243,7 +243,7 @@ def generate_adversarial_dataset(data_dir, uvmaps_dir, output_dir, simsac_checkp
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("SimSAC-Targeted Adversarial UV Map Generation")
+    print("SimSAC-Targeted Adversarial UV-Map Generation")
     print(f"Input directory:     {data_dir}")
     print(f"Reference UV maps:   {uvmaps_dir}")
     print(f"Output directory:    {output_dir}")

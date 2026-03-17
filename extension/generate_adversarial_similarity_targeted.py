@@ -195,7 +195,7 @@ def generate_adversarial_dataset(
     print(f"\nProcessing backgrounds: {[d.name for d in background_folders]}")
     print(f"Attack type: {attack_type}")
     print(f"Epsilon: {epsilon}")
-    print(f"PGD steps: {pgd_steps}")
+    print(f"PGD iterations: {pgd_steps}")
 
     # Determine which attacks to run
     attacks_to_run = []

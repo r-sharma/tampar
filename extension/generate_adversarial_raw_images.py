@@ -247,7 +247,7 @@ def generate_adversarial_raw_dataset(
     # Determine attack types
     attacks = ['fgsm', 'pgd'] if attack_type == 'both' else [attack_type]
 
-    print("Adversarial Raw Image Generation (SimSAC-Targeted)")
+    print("Adversarial Image Generation (SimSAC-Targeted)")
     print(f"Input directory:     {data_dir}")
     print(f"Reference UV maps:   {uvmaps_dir}")
     print(f"Output directory:    {output_dir}")

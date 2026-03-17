@@ -185,7 +185,7 @@ def generate_adversarial_dataset(data_dir, output_dir, attack_type='fgsm',
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("Adversarial UV Map Generation")
+    print("Adversarial UV-Map Generation")
     print(f"Input directory:  {data_dir}")
     print(f"Output directory: {output_dir}")
     print(f"Attack type(s):   {attack_type}")
